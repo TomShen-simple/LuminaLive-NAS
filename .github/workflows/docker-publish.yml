@@ -47,7 +47,7 @@ jobs:
   publish-dockerhub:
     runs-on: ubuntu-latest
     env:
-      DOCKERHUB_USERNAME: wst2946437060
+      DOCKERHUB_USERNAME: s1mpleboy
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
       - name: Check Docker Hub configuration

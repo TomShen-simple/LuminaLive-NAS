@@ -1,6 +1,6 @@
 services:
   lumina-live:
-    image: ${IMAGE_NAME:-ghcr.io/tomshen-simple/lumina-live-nas:latest}
+    image: ${IMAGE_NAME:-s1mpleboy/lumina-live-nas:latest}
     container_name: ${CONTAINER_NAME:-lumina-live}
     restart: unless-stopped
     ports:

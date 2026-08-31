@@ -12,7 +12,7 @@
 
 [url=https://github.com/TomShen-simple/LuminaLive-NAS]GitHub 仓库[/url]
 [url=https://github.com/TomShen-simple/LuminaLive-NAS/releases/tag/v1.0.0]v1.0.0 下载[/url]
-Docker 镜像：ghcr.io/tomshen-simple/lumina-live-nas:latest
+Docker 镜像：s1mpleboy/lumina-live-nas:latest
 
 [size=5][b]工作原理[/b][/size]
 

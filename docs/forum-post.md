@@ -12,7 +12,7 @@
 
 > GitHub：<https://github.com/TomShen-simple/LuminaLive-NAS>  
 > v1.0.0：<https://github.com/TomShen-simple/LuminaLive-NAS/releases/tag/v1.0.0>  
-> Docker 镜像：`ghcr.io/tomshen-simple/lumina-live-nas:latest`
+> Docker 镜像：`s1mpleboy/lumina-live-nas:latest`
 
 ---
 
@@ -250,4 +250,3 @@ docker compose down
 - 故障排查：<https://github.com/TomShen-simple/LuminaLive-NAS/blob/main/docs/troubleshooting.md>
 
 如果项目对你有帮助，欢迎在 GitHub 点一个 Star。遇到频道匹配、NAS 兼容性或部署问题，也欢迎提交 Issue，并附上 NAS 型号、CPU 架构和脱敏后的容器日志。
-

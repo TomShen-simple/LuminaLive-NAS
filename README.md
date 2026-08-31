@@ -18,7 +18,7 @@
 默认镜像从 GHCR 拉取。Docker Hub 镜像配置完成后，也可以在 `.env` 设置：
 
 ```dotenv
-IMAGE_NAME=wst2946437060/lumina-live-nas:latest
+IMAGE_NAME=s1mpleboy/lumina-live-nas:latest
 ```
 
 ```bash
