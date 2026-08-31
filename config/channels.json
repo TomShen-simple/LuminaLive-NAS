@@ -1,0 +1,69 @@
+{
+  "playlist_name": "LuminaLive NAS 直播",
+  "source_playlists": [
+    "https://raw.githubusercontent.com/best-fan/iptv-sources/main/cn_cctv_status.m3u8",
+    "https://raw.githubusercontent.com/best-fan/iptv-sources/main/cn_province_status.m3u8",
+    "https://iptv-org.github.io/iptv/countries/cn.m3u"
+  ],
+  "groups": [
+    {
+      "title": "央视",
+      "channels": [
+        {"id": "CCTV1", "name": "CCTV-1", "aliases": ["CCTV1", "CCTV-1 综合"]},
+        {"id": "CCTV2", "name": "CCTV-2", "aliases": ["CCTV2", "CCTV-2 财经"]},
+        {"id": "CCTV3", "name": "CCTV-3", "aliases": ["CCTV3", "CCTV-3 综艺"]},
+        {"id": "CCTV4", "name": "CCTV-4", "aliases": ["CCTV4", "CCTV-4 中文国际"]},
+        {"id": "CCTV5", "name": "CCTV-5", "aliases": ["CCTV5", "CCTV-5 体育"]},
+        {"id": "CCTV5PLUS", "name": "CCTV-5+", "aliases": ["CCTV5+", "CCTV-5+ 体育赛事"]},
+        {"id": "CCTV6", "name": "CCTV-6", "aliases": ["CCTV6", "CCTV-6 电影"]},
+        {"id": "CCTV7", "name": "CCTV-7", "aliases": ["CCTV7", "CCTV-7 国防军事"]},
+        {"id": "CCTV8", "name": "CCTV-8", "aliases": ["CCTV8", "CCTV-8 电视剧"]},
+        {"id": "CCTV9", "name": "CCTV-9", "aliases": ["CCTV9", "CCTV-9 纪录"]},
+        {"id": "CCTV10", "name": "CCTV-10", "aliases": ["CCTV10", "CCTV-10 科教"]},
+        {"id": "CCTV11", "name": "CCTV-11", "aliases": ["CCTV11", "CCTV-11 戏曲"]},
+        {"id": "CCTV12", "name": "CCTV-12", "aliases": ["CCTV12", "CCTV-12 社会与法"]},
+        {"id": "CCTV13", "name": "CCTV-13", "aliases": ["CCTV13", "CCTV-13 新闻"]},
+        {"id": "CCTV14", "name": "CCTV-14", "aliases": ["CCTV14", "CCTV-14 少儿"]},
+        {"id": "CCTV15", "name": "CCTV-15", "aliases": ["CCTV15", "CCTV-15 音乐"]},
+        {"id": "CCTV16", "name": "CCTV-16", "aliases": ["CCTV16", "CCTV-16 奥林匹克"]},
+        {"id": "CCTV17", "name": "CCTV-17", "aliases": ["CCTV17", "CCTV-17 农业农村"]}
+      ]
+    },
+    {
+      "title": "卫视",
+      "channels": [
+        {"id": "BTV", "name": "北京卫视"},
+        {"id": "DRAGON", "name": "东方卫视"},
+        {"id": "HUNAN", "name": "湖南卫视"},
+        {"id": "ZHEJIANG", "name": "浙江卫视"},
+        {"id": "JIANGSU", "name": "江苏卫视"},
+        {"id": "GUANGDONG", "name": "广东卫视"},
+        {"id": "SHENZHEN", "name": "深圳卫视"},
+        {"id": "SHANDONG", "name": "山东卫视"},
+        {"id": "ANHUI", "name": "安徽卫视"},
+        {"id": "HUBEI", "name": "湖北卫视"},
+        {"id": "SICHUAN", "name": "四川卫视"},
+        {"id": "HEBEI", "name": "河北卫视"},
+        {"id": "HENAN", "name": "河南卫视"},
+        {"id": "TIANJIN", "name": "天津卫视"},
+        {"id": "LIAONING", "name": "辽宁卫视"},
+        {"id": "HEILONGJIANG", "name": "黑龙江卫视"},
+        {"id": "JILIN", "name": "吉林卫视"},
+        {"id": "JIANGXI", "name": "江西卫视"},
+        {"id": "GUANGXI", "name": "广西卫视"},
+        {"id": "YUNNAN", "name": "云南卫视"},
+        {"id": "GUIZHOU", "name": "贵州卫视"},
+        {"id": "SHAANXI", "name": "陕西卫视"},
+        {"id": "SHANXI", "name": "山西卫视"},
+        {"id": "GANSU", "name": "甘肃卫视"},
+        {"id": "QINGHAI", "name": "青海卫视"},
+        {"id": "NINGXIA", "name": "宁夏卫视"},
+        {"id": "INNERMONGOLIA", "name": "内蒙古卫视"},
+        {"id": "XINJIANG", "name": "新疆卫视"},
+        {"id": "XIZANG", "name": "西藏卫视"},
+        {"id": "BINGTUAN", "name": "兵团卫视"},
+        {"id": "YANBIAN", "name": "延边卫视"}
+      ]
+    }
+  ]
+}

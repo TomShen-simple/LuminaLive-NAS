@@ -1,0 +1,6 @@
+services:
+  lumina-live:
+    build:
+      context: .
+    image: lumina-live-nas:local
+

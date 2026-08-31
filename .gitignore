@@ -1,0 +1,9 @@
+.env
+data/
+config/local.m3u
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.venv/
+.integration-data/
