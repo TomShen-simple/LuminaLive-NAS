@@ -8,7 +8,7 @@
 
 于是我重新做了一个面向家庭 NAS 的通用版本：让 NAS 定时读取公开或自定义 M3U，检查 HLS 清单以及真实视频分片，只把本轮能够播放的频道整理成一个订阅交给 APTV、TiviMate、VLC、Kodi 等客户端。
 
-项目完全开源、免费，仓库中没有写死我的 NAS 路径、家庭 IP、VPS 地址或私人域名。
+项目完全开源、免费。
 
 > GitHub：<https://github.com/TomShen-simple/LuminaLive-NAS>  
 > v1.0.0：<https://github.com/TomShen-simple/LuminaLive-NAS/releases/tag/v1.0.0>  
