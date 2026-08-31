@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#071426">
+  <title>LuminaLive NAS 控制台</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/overrides.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark">L</span><span><b>LuminaLive</b><small>NAS CONTROL</small></span></a>
+    <nav class="tabs" aria-label="主导航">
+      <button class="tab active" data-tab="dashboard">运行概览</button>
+      <button class="tab" data-tab="sources">M3U 管理</button>
+    </nav>
+    <div class="top-actions">
+      <span id="liveState" class="state-pill loading"><i></i><span>读取中</span></span>
+      <button id="tokenButton" class="icon-button" title="管理令牌">🔐</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="dashboardView" class="view active">
+      <div class="hero-row">
+        <div><p class="eyebrow">LIVE PLAYLIST MONITOR</p><h1>直播源运行状态</h1><p class="subtitle">查看频道健康度、检测延迟和当前上游。完整播放地址不会在面板中公开。</p></div>
+        <div class="hero-actions"><button id="refreshButton" class="primary">立即重新检测</button><button id="copyButton" class="secondary">复制订阅地址</button></div>
+      </div>
+
+      <div class="metric-grid">
+        <article class="metric featured"><div class="ring" id="healthRing"><span id="healthValue">--</span><small>健康度</small></div><div><span class="metric-label">频道在线率</span><strong id="channelCount">-- / --</strong><small id="updatedAt">等待首次扫描</small></div></article>
+        <article class="metric"><span class="metric-icon cyan">↯</span><span class="metric-label">平均验证延迟</span><strong id="averageLatency">--</strong><small>包含清单与真实分片请求</small></article>
+        <article class="metric"><span class="metric-icon violet">P95</span><span class="metric-label">P95 验证延迟</span><strong id="p95Latency">--</strong><small>用于识别慢源和网络异常</small></article>
+        <article class="metric"><span class="metric-icon green">✓</span><span class="metric-label">最近检测耗时</span><strong id="scanElapsed">--</strong><small id="scanState">状态读取中</small></article>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head"><div><h2>频道健康明细</h2><p>延迟越低通常意味着检测链路响应越快；离线频道会在后续周期重新尝试。</p></div><div class="filters"><input id="channelSearch" type="search" placeholder="搜索频道或上游"><select id="groupFilter"><option value="">全部分组</option></select><select id="healthFilter"><option value="">全部状态</option><option value="online">仅在线</option><option value="offline">仅离线</option></select></div></div>
+        <div class="table-wrap"><table><thead><tr><th>频道</th><th>分组</th><th>健康</th><th>验证延迟</th><th>当前上游</th></tr></thead><tbody id="channelRows"><tr><td colspan="5" class="empty">正在读取频道状态…</td></tr></tbody></table></div>
+      </section>
+    </section>
+
+    <section id="sourcesView" class="view">
+      <div class="hero-row"><div><p class="eyebrow">SOURCE MANAGEMENT</p><h1>自定义 M3U 管理</h1><p class="subtitle">维护远程列表与本地优先源。保存后点击“立即重新检测”即可生效。</p></div><div class="hero-actions"><button id="sourceRefreshButton" class="primary">保存并重新检测</button></div></div>
+
+      <div id="adminNotice" class="notice hidden"></div>
+      <section class="panel source-panel">
+        <div class="panel-head"><div><h2>远程 M3U 列表</h2><p>这些入口会按顺序读取、去重并参与频道匹配。环境变量来源仅展示、不能在这里修改。</p></div><button id="addSourceButton" class="secondary small">＋ 添加地址</button></div>
+        <div id="sourceList" class="source-list"></div>
+        <div id="envSources" class="env-sources hidden"><b>环境变量附加源</b><div></div></div>
+      </section>
+
+      <section class="panel source-panel">
+        <div class="panel-head"><div><h2>本地优先源 <code>config/local.m3u</code></h2><p>同名频道优先使用这里的地址。建议只添加自己有权使用并且可信的源。</p></div><div class="inline-actions"><button id="saveLocalButton" class="secondary small">保存本地 M3U</button><button id="deleteLocalButton" class="danger small">清空文件</button></div></div>
+        <form id="entryForm" class="entry-form"><input id="entryName" required placeholder="频道名，例如 东方卫视"><input id="entryGroup" placeholder="分组，例如 自定义"><input id="entryUrl" required type="url" placeholder="https://example.com/live.m3u8"><button class="primary small" type="submit">添加频道</button></form>
+        <div class="table-wrap compact"><table><thead><tr><th>频道名</th><th>分组</th><th>播放地址</th><th></th></tr></thead><tbody id="localRows"><tr><td colspan="4" class="empty">请先解锁管理功能</td></tr></tbody></table></div>
+        <details class="raw-editor"><summary>高级：直接编辑原始 M3U</summary><textarea id="rawM3u" spellcheck="false" aria-label="原始 M3U 内容">#EXTM3U
+</textarea><p>切换回可视化编辑前请先保存；可视化修改会重新生成标准 EXTINF 格式。</p></details>
+      </section>
+    </section>
+  </main>
+
+  <div id="tokenDialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="tokenTitle"><div class="dialog-card"><button id="closeDialog" class="dialog-close">×</button><p class="eyebrow">ADMIN ACCESS</p><h2 id="tokenTitle">管理访问</h2><p>如果容器设置了 <code>ADMIN_TOKEN</code>，请在这里输入。令牌只保存在当前浏览器标签页中。</p><input id="tokenInput" type="password" autocomplete="off" placeholder="管理令牌（局域网默认可留空）"><button id="saveToken" class="primary wide">保存并解锁</button></div></div>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

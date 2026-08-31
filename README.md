@@ -37,6 +37,22 @@ http://NAS局域网IP:18780/status.json
 http://NAS局域网IP:18780/healthz
 ```
 
+浏览器直接打开 `http://NAS局域网IP:18780/` 可进入 Web 管理后台，查看频道健康度、验证延迟和上游状态，并维护远程/本地 M3U、手动触发重新检测。
+
+管理写操作默认仅允许局域网客户端。需要通过反向代理访问管理功能时，建议在 `.env` 设置：
+
+```dotenv
+ADMIN_TOKEN=请换成足够长的随机字符串
+```
+
+### Web 管理后台
+
+![频道健康度与延迟面板](docs/images/web-dashboard.jpg)
+
+![远程与本地 M3U 管理](docs/images/web-m3u-manager.jpg)
+
+后台支持频道/分组/在线状态筛选，显示平均与 P95 验证延迟；M3U 管理页可以增删远程列表、可视化维护 `local.m3u`、直接编辑原始内容并提交立即检测。
+
 详细说明：
 
 - [通用 Docker Compose 部署教程](docs/compose.md)
@@ -100,4 +116,3 @@ docker compose -f compose.yaml -f compose.build.yaml up -d --build
 ```
 
 MIT License
-

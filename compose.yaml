@@ -16,6 +16,7 @@ services:
       ALLOW_PRIVATE_UPSTREAMS: ${ALLOW_PRIVATE_UPSTREAMS:-false}
       EXTRA_M3U_URLS: ${EXTRA_M3U_URLS:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
     volumes:
       - ${CONFIG_DIR:-./config}:/config
       - ${DATA_DIR:-./data}:/data

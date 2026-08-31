@@ -194,6 +194,8 @@ def collect_candidates(config: dict) -> dict[str, list[Candidate]]:
     result: dict[str, list[Candidate]] = {}
     source_urls = [str(value) for value in config["source_playlists"]] + list(settings.EXTRA_M3U_URLS)
     for source_order, source_url in enumerate(source_urls):
+        if not host_allowed(source_url):
+            continue
         try:
             text = fetch(source_url, 2_000_000)[0].decode("utf-8-sig", errors="replace")
         except (OSError, RuntimeError):

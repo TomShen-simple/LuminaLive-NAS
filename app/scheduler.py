@@ -16,8 +16,24 @@ LOG = logging.getLogger("lumina.scheduler")
 
 
 def run_once() -> None:
+    previous = {}
+    try:
+        previous = json.loads(settings.STATUS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        pass
+    refreshing = {
+        **previous,
+        "ok": bool(previous.get("ok")),
+        "state": "refreshing",
+        "refreshing": True,
+        "refreshStartedAt": utc_now(),
+    }
+    atomic_write(settings.STATUS_PATH, json.dumps(refreshing, ensure_ascii=False, indent=2) + "\n")
     try:
         status = refresh()
+        status["state"] = "ready"
+        status["refreshing"] = False
+        atomic_write(settings.STATUS_PATH, json.dumps(status, ensure_ascii=False, indent=2) + "\n")
         LOG.info("refresh complete: %s", json.dumps(status, ensure_ascii=False))
     except Exception as exc:  # scheduler must preserve the last good playlist
         LOG.exception("refresh failed")
@@ -26,6 +42,11 @@ def run_once() -> None:
             "updatedAt": utc_now(),
             "error": str(exc)[:500],
             "keptPreviousPlaylist": settings.PLAYLIST_PATH.exists(),
+            "state": "error",
+            "refreshing": False,
+            "channels": previous.get("channels", {}),
+            "published": previous.get("published", 0),
+            "requested": previous.get("requested", 0),
         }
         atomic_write(settings.STATUS_PATH, json.dumps(status, ensure_ascii=False, indent=2) + "\n")
 
@@ -36,9 +57,16 @@ def main() -> None:
         started = time.monotonic()
         run_once()
         elapsed = time.monotonic() - started
-        time.sleep(max(60, settings.REFRESH_INTERVAL - elapsed))
+        deadline = time.monotonic() + max(60, settings.REFRESH_INTERVAL - elapsed)
+        while time.monotonic() < deadline:
+            if settings.REFRESH_REQUEST_PATH.exists():
+                try:
+                    settings.REFRESH_REQUEST_PATH.unlink()
+                except OSError:
+                    pass
+                break
+            time.sleep(min(2, max(0.1, deadline - time.monotonic())))
 
 
 if __name__ == "__main__":
     main()
-

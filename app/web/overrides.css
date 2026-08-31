@@ -1,0 +1,3 @@
+.latency-bar i{width:35%}
+.latency.slow .latency-bar i{width:70%}
+.latency.bad .latency-bar i{width:100%}

@@ -91,6 +91,8 @@ curl -fsS http://127.0.0.1:18780/status.json
 http://NAS局域网IP:18780/live/yangshi.m3u
 ```
 
+直接访问 `http://NAS局域网IP:18780/` 是 Web 管理后台，可以查看健康度、频道验证延迟、离线频道和上游主机，并维护自定义 M3U。写操作默认限制在局域网；如需反向代理管理，请设置 `ADMIN_TOKEN`。
+
 ## 6. 资源与权限
 
 默认限制为 2 CPU、1 GB 内存。较弱 NAS 可以调整：
@@ -131,4 +133,3 @@ docker compose restart lumina-live
 ## 8. 反向代理与公网
 
 本项目默认按局域网服务设计。必须远程使用时，优先通过家庭 VPN（Tailscale、WireGuard）访问。若使用 HTTPS 反向代理，至少启用身份认证和访问限制；不要直接将 `18780` 映射到公网。
-

@@ -10,6 +10,7 @@ CHANNELS_PATH = CONFIG_DIR / "channels.json"
 LOCAL_M3U_PATH = CONFIG_DIR / "local.m3u"
 PLAYLIST_PATH = DATA_DIR / "yangshi.m3u"
 STATUS_PATH = DATA_DIR / "status.json"
+REFRESH_REQUEST_PATH = DATA_DIR / "refresh.request"
 BACKUP_DIR = DATA_DIR / "backups"
 HOST = os.environ.get("SERVER_HOST", "0.0.0.0")
 PORT = int(os.environ.get("SERVER_PORT", "8780"))
@@ -31,4 +32,4 @@ USER_AGENT = os.environ.get(
     "UPSTREAM_USER_AGENT",
     "Mozilla/5.0 (Linux; Android 14; TV) AppleWebKit/537.36 Chrome/126.0 Safari/537.36",
 )
-
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "").strip()
