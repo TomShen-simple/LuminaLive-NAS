@@ -64,6 +64,12 @@ docker compose pull
 docker compose up -d
 ```
 
+若所在网络访问 Docker Hub 更稳定，可在 `.env` 使用镜像：
+
+```dotenv
+IMAGE_NAME=wst2946437060/lumina-live-nas:latest
+```
+
 若 GHCR 无法访问，可本地构建：
 
 ```bash
