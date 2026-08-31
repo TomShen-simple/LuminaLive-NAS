@@ -1,0 +1,92 @@
+[size=6][b]【开源分享】LuminaLive NAS：央视卫视合并成一个 M3U，支持主流 Docker NAS[/b][/size]
+
+[img]https://raw.githubusercontent.com/TomShen-simple/LuminaLive-NAS/main/docs/images/forum/01-cover.png[/img]
+
+大家好，分享一个最近整理并开源的小项目：[b]LuminaLive NAS[/b]。
+
+我之前把直播源交给 VPS 解析，实际使用中遇到了换台慢、持续转圈、源失效后闪退，以及偶尔跳转到广告内容等问题。央视、卫视和地方台分成不同链接，维护起来也不方便。
+
+这个通用版本让 NAS 定时读取公开或自定义 M3U，检查 HLS 清单和真实视频分片，只把当前能够通过检测的频道整理成一个订阅交给 APTV、TiviMate、VLC、Kodi 等播放器。
+
+[b]项目完全开源、免费，没有写死我的 NAS 路径、家庭 IP、VPS 地址或私人域名。[/b]
+
+[url=https://github.com/TomShen-simple/LuminaLive-NAS]GitHub 仓库[/url]
+[url=https://github.com/TomShen-simple/LuminaLive-NAS/releases/tag/v1.0.0]v1.0.0 下载[/url]
+Docker 镜像：ghcr.io/tomshen-simple/lumina-live-nas:latest
+
+[size=5][b]工作原理[/b][/size]
+
+[img]https://raw.githubusercontent.com/TomShen-simple/LuminaLive-NAS/main/docs/images/forum/02-how-it-works.png[/img]
+
+NAS 负责读取来源、识别频道、检查 HLS 清单和真实视频分片，再输出一份合并后的 M3U。播放器播放时直接连接已验证的上游，整段视频不需要持续绕行 NAS 或 VPS。
+
+[b]主要功能：[/b]
+[list]
+[*]央视和卫视合并成一个 M3U 订阅；
+[*]检测 HLS 主清单、媒体清单和真实视频分片；
+[*]默认每 30 分钟重新检测；
+[*]失败时保留最近一次成功列表；
+[*]支持 config/local.m3u 和额外远程 M3U；
+[*]提供 healthz 与 status.json；
+[*]支持 linux/amd64、linux/arm64；
+[*]镜像可匿名拉取。
+[/list]
+
+适用于极空间、群晖、威联通、飞牛、绿联、铁威马、Unraid、TrueNAS SCALE、CasaOS、OpenMediaVault 和普通 Linux。前提是设备支持 64 位 Docker/Compose；32 位 ARM 和不能运行 Docker 的旧机型不在范围内。
+
+[size=5][b]Docker Compose 部署[/b][/size]
+
+[img]https://raw.githubusercontent.com/TomShen-simple/LuminaLive-NAS/main/docs/images/forum/03-compose.png[/img]
+
+[code]
+git clone https://github.com/TomShen-simple/LuminaLive-NAS.git
+cd LuminaLive-NAS
+cp .env.example .env
+mkdir -p config data
+docker compose pull
+docker compose up -d
+[/code]
+
+首次启动通常等待 1～5 分钟。容器健康后，在播放器添加：
+
+[code]http://NAS局域网IP:18780/live/yangshi.m3u[/code]
+
+状态地址：
+
+[code]
+http://NAS局域网IP:18780/healthz
+http://NAS局域网IP:18780/status.json
+[/code]
+
+[url=https://github.com/TomShen-simple/LuminaLive-NAS/blob/main/docs/compose.md]完整通用 Compose 教程[/url]
+[url=https://github.com/TomShen-simple/LuminaLive-NAS/blob/main/docs/zspace.md]极空间完整部署教程[/url]
+
+[size=5][b]极空间简要步骤[/b][/size]
+
+1. 新建 lumina-live 文件夹，并建立 config、data 子目录；
+2. 解压项目，准备 compose.yaml 和 .env；
+3. Docker → Compose → 新建项目；
+4. 存储位置选择 lumina-live 文件夹；
+5. 导入 compose.yaml 并部署；
+6. 容器变为 healthy 后，把 M3U 地址添加到播放器。
+
+新版 Compose 可以使用相对路径；旧版路径报错时，用“查询路径”取得实际绝对路径，不要照抄别人的存储池编号。
+
+[size=5][b]构建和测试结果[/b][/size]
+
+[img]https://raw.githubusercontent.com/TomShen-simple/LuminaLive-NAS/main/docs/images/forum/04-actions.png[/img]
+
+已通过单元测试、Python 编译检查、Compose 校验、Docker 构建、amd64/arm64 多架构发布、GHCR 匿名拉取，以及实际 M3U 与 HTTP 接口集成测试。
+
+[b]说明：[/b]
+[list]
+[*]公开源会随地区、网络和时间变化，无法承诺所有频道永久可用；
+[*]某个频道没出现，通常表示当前没有候选源通过检测；
+[*]项目不破解 DRM、会员或地区限制，也不托管节目内容；
+[*]不建议把 18780 端口直接暴露到公网，远程使用优先走家庭 VPN。
+[/list]
+
+[b]项目地址：[/b]
+[url=https://github.com/TomShen-simple/LuminaLive-NAS]https://github.com/TomShen-simple/LuminaLive-NAS[/url]
+
+如果项目对你有帮助，欢迎点一个 Star。遇到兼容性或部署问题，可以提交 Issue，并附上 NAS 型号、CPU 架构和脱敏后的容器日志。
