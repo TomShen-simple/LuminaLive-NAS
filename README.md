@@ -15,22 +15,19 @@
 
 ## 快速部署
 
-默认镜像从 GHCR 拉取。Docker Hub 镜像配置完成后，也可以在 `.env` 设置：
-
-```dotenv
-IMAGE_NAME=s1mpleboy/lumina-live-nas:latest
-```
+默认从 Docker Hub 拉取已经构建好的 amd64/arm64 镜像。`compose.yaml` 自带可运行默认值，不创建 `.env` 也能启动：
 
 ```bash
 git clone https://github.com/TomShen-simple/LuminaLive-NAS.git
 cd LuminaLive-NAS
 cp .env.example .env
 mkdir -p config data
+docker compose pull
 docker compose up -d
 docker compose logs -f
 ```
 
-首次启动会测速，通常等待 1～5 分钟。健康检查通过后访问：
+如果只想直接试用，可以省略复制 `.env`；需要更换端口、数据目录或性能参数时再创建它。首次启动会测速，通常等待 1～5 分钟。健康检查通过后访问：
 
 ```text
 http://NAS局域网IP:18780/live/yangshi.m3u

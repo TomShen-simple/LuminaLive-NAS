@@ -47,7 +47,7 @@ NAS 只负责：
 - 支持自定义频道、别名和检测并发数；
 - 提供 `/healthz` 和 `/status.json` 状态接口；
 - 支持 `linux/amd64` 与 `linux/arm64`；
-- Docker 镜像可以匿名拉取，无需登录 GHCR；
+- Docker Hub 镜像可以匿名拉取，无需登录账号；
 - 容器采用只读根文件系统、丢弃多余权限，并限制 CPU/内存。
 
 ### 支持哪些 NAS？
@@ -190,7 +190,7 @@ EXTRA_M3U_URLS=https://example.com/a.m3u,https://example.com/b.m3u
 - 普通 Docker 镜像构建；
 - `linux/amd64` 镜像构建与发布；
 - `linux/arm64` 镜像构建与发布；
-- GHCR 匿名拉取验证；
+- Docker Hub 匿名拉取验证；
 - 实际 M3U 扫描及 HTTP 接口集成测试。
 
 对应的 GitHub Actions：

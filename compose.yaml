@@ -1,22 +1,25 @@
+# 无需 .env 也能直接运行：mkdir -p config data && docker compose up -d
+# 如需改端口、目录或性能参数，请复制 .env.example 为 .env。
 services:
   lumina-live:
     image: ${IMAGE_NAME:-s1mpleboy/lumina-live-nas:latest}
     container_name: ${CONTAINER_NAME:-lumina-live}
     restart: unless-stopped
     ports:
-      - "${BIND_IP:-0.0.0}:${HOST_PORT:-18780}:8780"
+      - "${BIND_IP:-0.0.0.0}:${HOST_PORT:-18780}:8780"
     environment:
-      TZ: ${TZ:-Asia/Shanghai}
-      REFRESH_INTERVAL: ${REFRESH_INTERVAL:-1800}
-      STARTUP_DELAY: ${STARTUP_DELAY:-3}
-      HTTP_TIMEOUT: ${HTTP_TIMEOUT:-10}
-      CHANNEL_WORKERS: ${CHANNEL_WORKERS:-24}
-      MAX_CANDIDATES_PER_CHANNEL: ${MAX_CANDIDATES_PER_CHANNEL:-8}
-      MAX_BANDWIDTH: ${MAX_BANDWIDTH:-10000000}
-      ALLOW_PRIVATE_UPSTREAMS: ${ALLOW_PRIVATE_UPSTREAMS:-false}
-      EXTRA_M3U_URLS: ${EXTRA_M3U_URLS:-}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      TZ: "${TZ:-Asia/Shanghai}"
+      REFRESH_INTERVAL: "${REFRESH_INTERVAL:-1800}"
+      STARTUP_DELAY: "${STARTUP_DELAY:-3}"
+      HTTP_TIMEOUT: "${HTTP_TIMEOUT:-10}"
+      CHANNEL_WORKERS: "${CHANNEL_WORKERS:-24}"
+      MAX_CANDIDATES_PER_CHANNEL: "${MAX_CANDIDATES_PER_CHANNEL:-8}"
+      MAX_BANDWIDTH: "${MAX_BANDWIDTH:-10000000}"
+      ALLOW_PRIVATE_UPSTREAMS: "${ALLOW_PRIVATE_UPSTREAMS:-false}"
+      EXTRA_M3U_URLS: "${EXTRA_M3U_URLS:-}"
+      UPSTREAM_USER_AGENT: "${UPSTREAM_USER_AGENT:-Mozilla/5.0 (Linux; Android 14; TV) AppleWebKit/537.36 Chrome/126.0 Safari/537.36}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      ADMIN_TOKEN: "${ADMIN_TOKEN:-}"
     volumes:
       - ${CONFIG_DIR:-./config}:/config
       - ${DATA_DIR:-./data}:/data
@@ -27,11 +30,18 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    pids_limit: ${PIDS_LIMIT:-256}
     mem_limit: ${MEM_LIMIT:-1g}
     cpus: ${CPU_LIMIT:-2.0}
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILE:-3}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8780/healthz"]
       interval: 30s
       timeout: 8s
       retries: 3
-      start_period: 30s
+      start_period: ${HEALTH_START_PERIOD:-3m}

@@ -76,7 +76,7 @@ http://NAS局域网IP:18780/status.json
 
 [img]https://raw.githubusercontent.com/TomShen-simple/LuminaLive-NAS/main/docs/images/forum/04-actions.png[/img]
 
-已通过单元测试、Python 编译检查、Compose 校验、Docker 构建、amd64/arm64 多架构发布、GHCR 匿名拉取，以及实际 M3U 与 HTTP 接口集成测试。
+已通过单元测试、Python 编译检查、Compose 校验、Docker 构建、amd64/arm64 多架构发布、Docker Hub 匿名拉取，以及实际 M3U 与 HTTP 接口集成测试。
 
 [b]说明：[/b]
 [list]
