@@ -63,6 +63,26 @@ def canonical_name(value: str) -> str:
     return name
 
 
+def channel_url_affinity(channel_id: str, url: str) -> int:
+    """Prefer sources whose URL independently identifies the requested channel.
+
+    Public IPTV lists occasionally label an opaque numeric relay incorrectly.
+    A URL such as ``/live/cctv10hd.m3u8`` is stronger identity evidence than
+    ``/tsfile/live/0011_1.m3u8`` even when the latter responds a little faster.
+    """
+    channel = channel_id.upper()
+    if not channel.startswith("CCTV"):
+        return 0
+    searchable = re.sub(r"[^a-z0-9+]", "", urlparse(url).path.casefold())
+    if channel == "CCTV5PLUS":
+        return 2 if any(token in searchable for token in ("cctv5plus", "cctv5+", "cctv5p", "cctv5pul")) else 0
+    match = re.fullmatch(r"CCTV(\d{1,2})", channel)
+    if not match:
+        return 0
+    number = match.group(1)
+    return 2 if re.search(rf"cctv0*{re.escape(number)}(?!\d)", searchable) else 0
+
+
 def parse_m3u(text: str, source_order: int = 0) -> list[Candidate]:
     result: list[Candidate] = []
     pending = ""
@@ -217,17 +237,27 @@ def collect_candidates(config: dict) -> dict[str, list[Candidate]]:
             if candidate.url not in seen:
                 seen.add(candidate.url)
                 unique.append(candidate)
+        # Keep semantically identifiable URLs ahead of opaque relay numbers so
+        # a fast but mislabeled stream cannot displace the correct channel.
+        unique.sort(key=lambda item: (-channel_url_affinity(channel_id, item.url), item.source_order))
         result[channel_id] = unique[: settings.MAX_CANDIDATES]
     return result
 
 
 def resolve_channel(channel_id: str, candidates: list[Candidate]) -> tuple[str, Validated | None]:
     best: Validated | None = None
+    best_affinity = -1
     for candidate in candidates:
         checked = validate(candidate.url)
-        if checked and (best is None or checked.elapsed_ms < best.elapsed_ms):
+        affinity = channel_url_affinity(channel_id, candidate.url)
+        if checked and (
+            best is None
+            or affinity > best_affinity
+            or (affinity == best_affinity and checked.elapsed_ms < best.elapsed_ms)
+        ):
             best = checked
-            if checked.elapsed_ms <= 800:
+            best_affinity = affinity
+            if affinity > 0 and checked.elapsed_ms <= 800:
                 break
     return channel_id, best
 

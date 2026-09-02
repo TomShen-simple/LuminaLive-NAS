@@ -13,6 +13,26 @@ class PlaylistParsingTest(unittest.TestCase):
         self.assertEqual("北京卫视", resolver.canonical_name("BRTV 北京卫视 (1080p)"))
         self.assertEqual("广东卫视", resolver.canonical_name("Guangdong Satellite TV"))
 
+    def test_cctv_url_affinity_does_not_confuse_ten_and_eleven(self) -> None:
+        self.assertEqual(2, resolver.channel_url_affinity("CCTV10", "http://cdn.test/live/cctv10hd.m3u8"))
+        self.assertEqual(0, resolver.channel_url_affinity("CCTV10", "http://cdn.test/live/cctv11hd.m3u8"))
+        self.assertEqual(2, resolver.channel_url_affinity("CCTV11", "http://cdn.test/live/cctv11hd.m3u8"))
+
+    def test_named_cctv_source_wins_over_faster_opaque_relay(self) -> None:
+        opaque = resolver.Candidate("CCTV-10", "http://relay.test/0011_1.m3u8", 0)
+        named = resolver.Candidate("CCTV-10", "http://cdn.test/live/cctv10hd.m3u8", 0)
+
+        def checked(url: str) -> resolver.Validated:
+            elapsed = 100 if "0011" in url else 900
+            return resolver.Validated(url, elapsed, url, f"{url}/segment.ts")
+
+        with mock.patch.object(resolver, "validate", side_effect=checked):
+            channel_id, selected = resolver.resolve_channel("CCTV10", [opaque, named])
+
+        self.assertEqual("CCTV10", channel_id)
+        self.assertIsNotNone(selected)
+        self.assertEqual(named.url, selected.url)
+
     def test_parses_extinf_and_url_pairs(self) -> None:
         text = (
             "#EXTM3U\n"
@@ -63,4 +83,3 @@ class RenderingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
