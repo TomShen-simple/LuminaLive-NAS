@@ -3,7 +3,6 @@
 services:
   lumina-live:
     image: ${IMAGE_NAME:-s1mpleboy/lumina-live-nas:latest}
-    container_name: lumina-live
     restart: unless-stopped
     ports:
       - "${BIND_IP:-0.0.0.0}:${HOST_PORT:-18780}:8780"
@@ -31,15 +30,15 @@ services:
     cap_drop:
       - ALL
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8780/healthz"]
+      # /api/info 只验证服务进程；普通 M3U 上游暂时失效时也不应阻断官方咪咕中继。
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8780/api/info"]
       interval: 30s
       timeout: 8s
       retries: 3
-      start_period: 3m
+      start_period: 30s
 
   vps-tunnel:
     image: ${IMAGE_NAME:-s1mpleboy/lumina-live-nas:latest}
-    container_name: lumina-live-vps-tunnel
     restart: unless-stopped
     depends_on:
       lumina-live:

@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -22,6 +23,7 @@ USER_AGENT = os.environ.get(
     "Mozilla/5.0 (Linux; Android 14; TV) AppleWebKit/537.36 Chrome/126.0 Safari/537.36",
 )
 URI_ATTRIBUTE_RE = re.compile(r'URI="([^"]+)"', re.IGNORECASE)
+LOG = logging.getLogger("lumina.migu")
 
 
 class MiguRelay:
@@ -64,6 +66,13 @@ class MiguRelay:
             "lastSuccessAt": self.last_success_at,
             "lastError": self.last_error,
         }
+
+    async def status_response(self, request: web.Request) -> web.Response:
+        self.require_access(request)
+        return web.json_response(
+            self.status(),
+            headers={"Cache-Control": "no-cache, no-store", "X-Content-Type-Options": "nosniff"},
+        )
 
     def require_access(self, request: web.Request) -> None:
         if not self.enabled:
@@ -175,7 +184,9 @@ class MiguRelay:
             self.last_error = exc.text
             raise
         except Exception as exc:
-            self.last_error = type(exc).__name__
+            detail = str(exc).strip().replace("\n", " ")[:240]
+            self.last_error = f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+            LOG.warning("Migu API request failed for program %s: %s", program_id, self.last_error)
             raise web.HTTPBadGateway(text="Migu API request failed") from exc
 
     @staticmethod
@@ -205,7 +216,11 @@ class MiguRelay:
         return web.Response(
             text=self.rewrite_manifest(manifest, final_url),
             content_type="application/vnd.apple.mpegurl",
-            headers={"Cache-Control": "no-store", "X-Lumina-Upstream": "migu-official"},
+            headers={
+                "Cache-Control": "no-store",
+                "X-Lumina-Upstream": "migu-official",
+                "X-Lumina-Program-ID": request.match_info["program_id"],
+            },
         )
 
     async def asset(self, request: web.Request) -> web.StreamResponse:
@@ -246,4 +261,3 @@ class MiguRelay:
                     await downstream.write(chunk)
             await downstream.write_eof()
             return downstream
-

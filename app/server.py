@@ -172,6 +172,7 @@ def create_app() -> web.Application:
     app.router.add_get("/healthz", health)
     app.router.add_get("/status.json", status)
     app.router.add_get("/live/{filename}", playlist)
+    app.router.add_get("/api/migu/status", migu.status_response)
     app.router.add_get("/api/migu/{program_id}/index.m3u8", migu.index)
     app.router.add_route("*", "/api/migu/asset/{token}", migu.asset)
     return app
