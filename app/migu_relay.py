@@ -10,7 +10,7 @@ import re
 import secrets
 import socket
 import time
-from urllib.parse import urlencode, urljoin, urlparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 from aiohttp import ClientSession, ClientTimeout, TCPConnector, web
 
@@ -110,6 +110,36 @@ class MiguRelay:
         signature = hmac.new(self.signing_secret.encode(), body.encode(), hashlib.sha256).digest()
         return f"{body}.{base64.urlsafe_b64encode(signature).decode().rstrip('=')}"
 
+    @staticmethod
+    def add_android_dd_calcu(url: str, program_id: str) -> str:
+        """Finish Migu's Android media-URL handshake.
+
+        The playurl API returns a URL containing ``puData``.  That value is
+        intentionally incomplete: the Android client derives ``ddCalcu`` from
+        it before asking the CDN for the manifest.  Sending the raw API URL is
+        rejected by the CDN with its non-standard HTTP 661 response.
+        """
+        pu_data = parse_qs(urlparse(url).query, keep_blank_values=True).get("puData", [""])[-1]
+        if not pu_data or len(program_id) < 7 or not program_id[6].isdigit():
+            raise web.HTTPBadGateway(text="Migu API returned incomplete media credentials")
+
+        keys = "cdabyzwxkl"
+        date_key = keys[int(str(time.localtime().tm_year)[2])]
+        program_key = keys[int(program_id[6])]
+        dd_calcu: list[str] = []
+        for index in range((len(pu_data) + 1) // 2):
+            dd_calcu.extend((pu_data[-index - 1], pu_data[index]))
+            if index == 1:
+                dd_calcu.append("v")
+            elif index == 2:
+                dd_calcu.append(date_key)
+            elif index == 3:
+                dd_calcu.append(program_key)
+            elif index == 4:
+                dd_calcu.append("a")
+        separator = "&" if "?" in url else "?"
+        return f"{url}{separator}ddCalcu={''.join(dd_calcu)}&sv=10004&ct=android"
+
     def decode_asset(self, token: str) -> str:
         try:
             body, supplied = token.split(".", 1)
@@ -181,9 +211,12 @@ class MiguRelay:
             if str(payload.get("code")) != "200":
                 reason = payload.get("rid") or payload.get("code") or "unknown"
                 raise web.HTTPBadGateway(text=f"Migu API {reason}")
-            url = str(((payload.get("body") or {}).get("urlInfo") or {}).get("url") or "")
+            body = payload.get("body") or {}
+            url = str((body.get("urlInfo") or {}).get("url") or "")
             if not self.allowed_url(url):
                 raise web.HTTPBadGateway(text="Migu API returned an invalid media URL")
+            resolved_program_id = str((body.get("content") or {}).get("contId") or program_id)
+            url = self.add_android_dd_calcu(url, resolved_program_id)
             self.resolved[program_id] = (url, time.monotonic())
             self.last_success_at = time.time()
             self.last_error = ""

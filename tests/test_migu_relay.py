@@ -41,6 +41,24 @@ class MiguRelayTest(unittest.TestCase):
         )
         self.assertFalse(self.relay.allowed_url("http://example.test/live/index.m3u8"))
 
+    def test_android_dd_calcu_completes_official_media_url(self) -> None:
+        url = "http://gslbmgsplive.miguvideo.com/live/index.m3u8?a=1&puData=0123456789"
+        with mock.patch("app.migu_relay.time.localtime") as localtime:
+            localtime.return_value.tm_year = 2026
+            completed = self.relay.add_android_dd_calcu(url, "961023778")
+        self.assertEqual(
+            "http://gslbmgsplive.miguvideo.com/live/index.m3u8?"
+            "a=1&puData=0123456789&ddCalcu=9081v72a63x54a&sv=10004&ct=android",
+            completed,
+        )
+
+    def test_android_dd_calcu_rejects_missing_pudata(self) -> None:
+        with self.assertRaises(web.HTTPBadGateway):
+            self.relay.add_android_dd_calcu(
+                "http://gslbmgsplive.miguvideo.com/live/index.m3u8",
+                "961023778",
+            )
+
     def test_untrusted_manifest_host_is_rejected(self) -> None:
         with self.assertRaises(web.HTTPBadGateway):
             self.relay.rewrite_manifest(
