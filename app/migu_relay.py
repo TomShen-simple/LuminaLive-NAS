@@ -266,17 +266,28 @@ class MiguRelay:
 
     async def index(self, request: web.Request) -> web.Response:
         self.require_access(request)
-        url = await self.resolve(request.match_info["program_id"])
-        manifest, final_url = await self.fetch_manifest(url)
-        return web.Response(
-            text=self.rewrite_manifest(manifest, final_url),
-            content_type="application/vnd.apple.mpegurl",
-            headers={
-                "Cache-Control": "no-store",
-                "X-Lumina-Upstream": "migu-official",
-                "X-Lumina-Program-ID": request.match_info["program_id"],
-            },
-        )
+        try:
+            program_id = request.match_info["program_id"]
+            url = await self.resolve(program_id)
+            manifest, final_url = await self.fetch_manifest(url)
+            rewritten = self.rewrite_manifest(manifest, final_url)
+            return web.Response(
+                text=rewritten,
+                content_type="application/vnd.apple.mpegurl",
+                headers={
+                    "Cache-Control": "no-store",
+                    "X-Lumina-Upstream": "migu-official",
+                    "X-Lumina-Program-ID": program_id,
+                },
+            )
+        except web.HTTPException as exc:
+            self.last_error = f"index {type(exc).__name__}: {exc.text}"[:260]
+            raise
+        except Exception as exc:
+            detail = str(exc).strip().replace("\n", " ")[:180]
+            self.last_error = f"index {type(exc).__name__}: {detail}"[:260]
+            LOG.exception("Migu index failed for program %s", request.match_info["program_id"])
+            raise web.HTTPBadGateway(text="Migu index request failed") from exc
 
     async def asset(self, request: web.Request) -> web.StreamResponse:
         url = self.decode_asset(request.match_info["token"])
