@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import hashlib
 import hmac
 import json
@@ -10,6 +11,7 @@ import re
 import secrets
 import socket
 import time
+from urllib import request as urllib_request
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 from aiohttp import ClientSession, ClientTimeout, TCPConnector, web
@@ -234,21 +236,33 @@ class MiguRelay:
     def upstream_headers() -> dict[str, str]:
         return {"User-Agent": USER_AGENT, "Referer": MIGU_REFERER, "Accept": "*/*"}
 
+    @classmethod
+    def _read_manifest_compat(cls, url: str) -> tuple[bytes, str, int]:
+        # Migu's gslb endpoint emits a legal-enough 302 that curl and Android
+        # accept, but aiohttp's strict parser rejects the trailing HTML as a
+        # second malformed response.  urllib mirrors the tolerant client
+        # behaviour and is used only for these tiny HLS manifests.
+        request = urllib_request.Request(url, headers=cls.upstream_headers())
+        with urllib_request.urlopen(request, timeout=30) as response:
+            return response.read(1_000_001), response.geturl(), int(response.status)
+
     async def fetch_manifest(self, url: str) -> tuple[str, str]:
-        assert self.http is not None
-        async with self.http.get(url, headers=self.upstream_headers(), allow_redirects=True) as response:
-            if response.status != 200:
-                raise web.HTTPBadGateway(text=f"Migu manifest HTTP {response.status}")
-            final_url = str(response.url)
-            if not self.allowed_url(final_url):
-                raise web.HTTPBadGateway(text="Migu redirected to an untrusted host")
-            data = await response.content.read(1_000_001)
-            if len(data) > 1_000_000:
-                raise web.HTTPBadGateway(text="Migu manifest is too large")
-            text = data.decode("utf-8-sig", errors="replace")
-            if not text.startswith("#EXTM3U"):
-                raise web.HTTPBadGateway(text="Migu response is not HLS")
-            return text, final_url
+        try:
+            data, final_url, status = await asyncio.to_thread(self._read_manifest_compat, url)
+        except Exception as exc:
+            detail = str(exc).strip().replace("\n", " ")[:180]
+            self.last_error = f"manifest {type(exc).__name__}: {detail}"
+            raise web.HTTPBadGateway(text="Migu manifest request failed") from exc
+        if status != 200:
+            raise web.HTTPBadGateway(text=f"Migu manifest HTTP {status}")
+        if not self.allowed_url(final_url):
+            raise web.HTTPBadGateway(text="Migu redirected to an untrusted host")
+        if len(data) > 1_000_000:
+            raise web.HTTPBadGateway(text="Migu manifest is too large")
+        text = data.decode("utf-8-sig", errors="replace")
+        if not text.startswith("#EXTM3U"):
+            raise web.HTTPBadGateway(text="Migu response is not HLS")
+        return text, final_url
 
     async def index(self, request: web.Request) -> web.Response:
         self.require_access(request)
