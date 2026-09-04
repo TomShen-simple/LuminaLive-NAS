@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import secrets
+import socket
 import time
 from urllib.parse import urlencode, urljoin, urlparse
 
@@ -50,7 +51,14 @@ class MiguRelay:
         timeout = ClientTimeout(total=None, connect=7, sock_read=30)
         self.http = ClientSession(
             timeout=timeout,
-            connector=TCPConnector(limit=256, limit_per_host=128, ttl_dns_cache=300),
+            # Many NAS installations advertise IPv6 without having a usable
+            # route. Migu's API/media endpoints are reliably available on IPv4.
+            connector=TCPConnector(
+                family=socket.AF_INET,
+                limit=256,
+                limit_per_host=128,
+                ttl_dns_cache=300,
+            ),
             auto_decompress=False,
         )
 
@@ -88,7 +96,7 @@ class MiguRelay:
         parsed = urlparse(value)
         host = (parsed.hostname or "").lower()
         return (
-            parsed.scheme == "https"
+            parsed.scheme in {"http", "https"}
             and bool(host)
             and any(host == suffix or host.endswith(f".{suffix}") for suffix in self.allowed_suffixes)
         )

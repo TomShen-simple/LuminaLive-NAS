@@ -35,6 +35,12 @@ class MiguRelayTest(unittest.TestCase):
         self.assertNotIn('URI="init.mp4"', rewritten)
         self.assertEqual(2, rewritten.count("/api/migu/asset/"))
 
+    def test_official_http_media_host_is_allowed(self) -> None:
+        self.assertTrue(
+            self.relay.allowed_url("http://gslbmgsplive.miguvideo.com/live/index.m3u8")
+        )
+        self.assertFalse(self.relay.allowed_url("http://example.test/live/index.m3u8"))
+
     def test_untrusted_manifest_host_is_rejected(self) -> None:
         with self.assertRaises(web.HTTPBadGateway):
             self.relay.rewrite_manifest(
