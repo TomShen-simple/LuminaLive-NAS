@@ -1,0 +1,78 @@
+# 在国内 NAS 上运行：咪咕官方接口与媒体回源均发生在 NAS，VPS 仅通过反向 SSH 隧道访问。
+# 使用前复制 .env.vps-relay.example 为 .env，并把专用私钥、known_hosts 放入 ./secrets。
+services:
+  lumina-live:
+    image: ${IMAGE_NAME:-s1mpleboy/lumina-live-nas:latest}
+    container_name: lumina-live
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP:-0.0.0.0}:${HOST_PORT:-18780}:8780"
+    environment:
+      TZ: "${TZ:-Asia/Shanghai}"
+      REFRESH_INTERVAL: "${REFRESH_INTERVAL:-1800}"
+      STARTUP_DELAY: "${STARTUP_DELAY:-3}"
+      HTTP_TIMEOUT: "${HTTP_TIMEOUT:-10}"
+      CHANNEL_WORKERS: "${CHANNEL_WORKERS:-24}"
+      MAX_CANDIDATES_PER_CHANNEL: "${MAX_CANDIDATES_PER_CHANNEL:-8}"
+      MAX_BANDWIDTH: "${MAX_BANDWIDTH:-10000000}"
+      EXTRA_M3U_URLS: "${EXTRA_M3U_URLS:-}"
+      UPSTREAM_USER_AGENT: "${UPSTREAM_USER_AGENT:-Mozilla/5.0 (Linux; Android 14; TV) AppleWebKit/537.36 Chrome/126.0 Safari/537.36}"
+      ADMIN_TOKEN: "${ADMIN_TOKEN:-}"
+      MIGU_RELAY_TOKEN: "${MIGU_RELAY_TOKEN:?请在 .env 设置 MIGU_RELAY_TOKEN}"
+      MIGU_RELAY_SIGNING_SECRET: "${MIGU_RELAY_SIGNING_SECRET:?请在 .env 设置 MIGU_RELAY_SIGNING_SECRET}"
+    volumes:
+      - ${CONFIG_DIR:-./config}:/config
+      - ${DATA_DIR:-./data}:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8780/healthz"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 3m
+
+  vps-tunnel:
+    image: ${IMAGE_NAME:-s1mpleboy/lumina-live-nas:latest}
+    container_name: lumina-live-vps-tunnel
+    restart: unless-stopped
+    depends_on:
+      lumina-live:
+        condition: service_healthy
+    entrypoint: ["/usr/bin/tini", "--", "/usr/bin/autossh"]
+    command:
+      - -M
+      - "0"
+      - -N
+      - -T
+      - -o
+      - ExitOnForwardFailure=yes
+      - -o
+      - ServerAliveInterval=20
+      - -o
+      - ServerAliveCountMax=3
+      - -o
+      - StrictHostKeyChecking=yes
+      - -o
+      - UserKnownHostsFile=/run/secrets/known_hosts
+      - -i
+      - /run/secrets/vps_tunnel_key
+      - -R
+      - "127.0.0.1:${VPS_RELAY_PORT:-18782}:lumina-live:8780"
+      - "${VPS_SSH_USER:-opc}@${VPS_HOST:?请在 .env 设置 VPS_HOST}"
+    volumes:
+      - ./secrets/vps_tunnel_key:/run/secrets/vps_tunnel_key:ro
+      - ./secrets/known_hosts:/run/secrets/known_hosts:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+

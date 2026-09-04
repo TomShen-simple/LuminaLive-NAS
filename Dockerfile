@@ -11,7 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg tini tzdata \
+    && apt-get install -y --no-install-recommends autossh ca-certificates curl ffmpeg openssh-client tini tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/lumina-live
@@ -30,4 +30,3 @@ HEALTHCHECK --interval=30s --timeout=8s --start-period=30s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8780/healthz || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/lumina-entrypoint"]
-

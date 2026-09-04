@@ -20,6 +20,9 @@ services:
       UPSTREAM_USER_AGENT: "${UPSTREAM_USER_AGENT:-Mozilla/5.0 (Linux; Android 14; TV) AppleWebKit/537.36 Chrome/126.0 Safari/537.36}"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
       ADMIN_TOKEN: "${ADMIN_TOKEN:-}"
+      # 启用“NAS 国内回源 -> VPS 私有隧道”时设置。至少 24 个字符。
+      MIGU_RELAY_TOKEN: "${MIGU_RELAY_TOKEN:-}"
+      MIGU_RELAY_SIGNING_SECRET: "${MIGU_RELAY_SIGNING_SECRET:-}"
     volumes:
       - ${CONFIG_DIR:-./config}:/config
       - ${DATA_DIR:-./data}:/data

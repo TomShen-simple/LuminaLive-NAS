@@ -42,6 +42,10 @@ http://NAS局域网IP:18780/healthz
 
 浏览器直接打开 `http://NAS局域网IP:18780/` 可进入 Web 管理后台，查看频道健康度、验证延迟和上游状态，并维护远程/本地 M3U、手动触发重新检测。
 
+如需让海外 VPS 使用 NAS 的国内网络调用咪咕官方接口，请使用
+[`compose.vps-relay.yaml`](compose.vps-relay.yaml)。该模式通过 NAS 主动建立的、仅在 VPS
+回环地址监听的反向 SSH 隧道传输 HLS；不会向公网开放 NAS 管理端口或直播端口。
+
 管理写操作默认仅允许局域网客户端。需要通过反向代理访问管理功能时，建议在 `.env` 设置：
 
 ```dotenv

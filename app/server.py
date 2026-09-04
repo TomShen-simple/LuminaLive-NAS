@@ -10,6 +10,7 @@ from pathlib import Path
 from aiohttp import web
 
 from . import admin, settings
+from .migu_relay import MiguRelay
 
 
 STARTED = time.monotonic()
@@ -155,6 +156,10 @@ async def playlist(request: web.Request) -> web.Response:
 
 def create_app() -> web.Application:
     app = web.Application(client_max_size=1024 * 1024)
+    migu = MiguRelay()
+    app["migu_relay"] = migu
+    app.on_startup.append(migu.start)
+    app.on_cleanup.append(migu.stop)
     app.router.add_get("/", root)
     app.router.add_get("/assets/{name}", static_asset)
     app.router.add_get("/api/info", info)
@@ -167,6 +172,8 @@ def create_app() -> web.Application:
     app.router.add_get("/healthz", health)
     app.router.add_get("/status.json", status)
     app.router.add_get("/live/{filename}", playlist)
+    app.router.add_get("/api/migu/{program_id}/index.m3u8", migu.index)
+    app.router.add_route("*", "/api/migu/asset/{token}", migu.asset)
     return app
 
 
