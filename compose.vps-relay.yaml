@@ -44,27 +44,11 @@ services:
     depends_on:
       lumina-live:
         condition: service_healthy
-    entrypoint: ["/usr/bin/tini", "--", "/usr/bin/autossh"]
-    command:
-      - -M
-      - "0"
-      - -N
-      - -T
-      - -o
-      - ExitOnForwardFailure=yes
-      - -o
-      - ServerAliveInterval=20
-      - -o
-      - ServerAliveCountMax=3
-      - -o
-      - StrictHostKeyChecking=yes
-      - -o
-      - UserKnownHostsFile=/run/secrets/known_hosts
-      - -i
-      - /run/secrets/vps_tunnel_key
-      - -R
-      - "127.0.0.1:${VPS_RELAY_PORT:-18782}:lumina-live:8780"
-      - "${VPS_SSH_USER:-opc}@${VPS_HOST:?请在 .env 设置 VPS_HOST}"
+    entrypoint: ["/usr/bin/tini", "--", "/usr/local/bin/lumina-vps-tunnel"]
+    environment:
+      VPS_HOST: "${VPS_HOST:?请在 .env 设置 VPS_HOST}"
+      VPS_SSH_USER: "${VPS_SSH_USER:-opc}"
+      VPS_RELAY_PORT: "${VPS_RELAY_PORT:-18782}"
     volumes:
       - ./secrets/vps_tunnel_key:/run/secrets/vps_tunnel_key:ro
       - ./secrets/known_hosts:/run/secrets/known_hosts:ro
@@ -75,4 +59,3 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-

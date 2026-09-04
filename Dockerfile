@@ -21,7 +21,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY config ./config-default
 COPY docker-entrypoint.sh /usr/local/bin/lumina-entrypoint
-RUN chmod 0755 /usr/local/bin/lumina-entrypoint \
+COPY vps-tunnel-entrypoint.sh /usr/local/bin/lumina-vps-tunnel
+RUN chmod 0755 /usr/local/bin/lumina-entrypoint /usr/local/bin/lumina-vps-tunnel \
     && mkdir -p /config /data/backups
 
 EXPOSE 8780
