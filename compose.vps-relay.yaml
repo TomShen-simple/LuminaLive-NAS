@@ -49,9 +49,8 @@ services:
       VPS_HOST: "${VPS_HOST:?请在 .env 设置 VPS_HOST}"
       VPS_SSH_USER: "${VPS_SSH_USER:-opc}"
       VPS_RELAY_PORT: "${VPS_RELAY_PORT:-18782}"
-    volumes:
-      - ./secrets/vps_tunnel_key:/run/secrets/vps_tunnel_key:ro
-      - ./secrets/known_hosts:/run/secrets/known_hosts:ro
+      VPS_TUNNEL_KEY_B64: "${VPS_TUNNEL_KEY_B64:?请在 .env 设置 VPS_TUNNEL_KEY_B64}"
+      VPS_KNOWN_HOSTS_B64: "${VPS_KNOWN_HOSTS_B64:?请在 .env 设置 VPS_KNOWN_HOSTS_B64}"
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
