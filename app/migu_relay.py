@@ -159,20 +159,40 @@ class MiguRelay:
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             raise web.HTTPForbidden(text="invalid asset token") from exc
 
-    def rewrite_manifest(self, manifest: str, base_url: str) -> str:
-        def proxy_url(value: str) -> str:
+    def rewrite_manifest(
+        self,
+        manifest: str,
+        base_url: str,
+        *,
+        direct_assets: bool = False,
+    ) -> str:
+        # Keep master/variant playlists on the NAS so the short-lived official
+        # URL can be refreshed there. Once a media playlist is reached, direct
+        # mode lets the player download large objects from Migu's CDN instead
+        # of carrying every byte through NAS -> SSH tunnel -> VPS.
+        is_media_playlist = any(
+            line.strip().upper().startswith(("#EXTINF:", "#EXT-X-TARGETDURATION:"))
+            for line in manifest.splitlines()
+        )
+
+        def output_url(value: str) -> str:
             absolute = urljoin(base_url, value)
             if not self.allowed_url(absolute):
                 raise web.HTTPBadGateway(text="Migu manifest contains an untrusted host")
-            return f"/api/migu/asset/{self.encode_asset(absolute)}"
+            if direct_assets and is_media_playlist:
+                return absolute
+            suffix = "?direct=1" if direct_assets else ""
+            return f"/api/migu/asset/{self.encode_asset(absolute)}{suffix}"
 
         output: list[str] = []
         for raw in manifest.splitlines():
             line = raw.strip()
             if line.startswith("#"):
-                line = URI_ATTRIBUTE_RE.sub(lambda match: f'URI="{proxy_url(match.group(1))}"', line)
+                line = URI_ATTRIBUTE_RE.sub(
+                    lambda match: f'URI="{output_url(match.group(1))}"', line
+                )
             elif line:
-                line = proxy_url(line)
+                line = output_url(line)
             output.append(line)
         return "\n".join(output) + "\n"
 
@@ -270,7 +290,11 @@ class MiguRelay:
             program_id = request.match_info["program_id"]
             url = await self.resolve(program_id)
             manifest, final_url = await self.fetch_manifest(url)
-            rewritten = self.rewrite_manifest(manifest, final_url)
+            rewritten = self.rewrite_manifest(
+                manifest,
+                final_url,
+                direct_assets=request.query.get("direct") == "1",
+            )
             return web.Response(
                 text=rewritten,
                 content_type="application/vnd.apple.mpegurl",
@@ -311,7 +335,11 @@ class MiguRelay:
                 if not text.startswith("#EXTM3U"):
                     raise web.HTTPBadGateway(text="Migu response is not HLS")
                 return web.Response(
-                    text=self.rewrite_manifest(text, final_url),
+                    text=self.rewrite_manifest(
+                        text,
+                        final_url,
+                        direct_assets=request.query.get("direct") == "1",
+                    ),
                     content_type="application/vnd.apple.mpegurl",
                     headers={"Cache-Control": "no-store"},
                 )

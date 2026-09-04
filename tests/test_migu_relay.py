@@ -35,6 +35,32 @@ class MiguRelayTest(unittest.TestCase):
         self.assertNotIn('URI="init.mp4"', rewritten)
         self.assertEqual(2, rewritten.count("/api/migu/asset/"))
 
+    def test_direct_mode_keeps_master_on_relay_but_media_on_migu_cdn(self) -> None:
+        master = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=5000000\nquality/index.m3u8\n"
+        rewritten_master = self.relay.rewrite_manifest(
+            master,
+            "https://gslbmgsplive.miguvideo.com/live/index.m3u8",
+            direct_assets=True,
+        )
+        self.assertIn("/api/migu/asset/", rewritten_master)
+        self.assertIn("?direct=1", rewritten_master)
+
+        media = '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:6,\nseg.ts\n'
+        rewritten_media = self.relay.rewrite_manifest(
+            media,
+            "https://gslbmgsplive.miguvideo.com/live/quality/index.m3u8",
+            direct_assets=True,
+        )
+        self.assertNotIn("/api/migu/asset/", rewritten_media)
+        self.assertIn(
+            'URI="https://gslbmgsplive.miguvideo.com/live/quality/init.mp4"',
+            rewritten_media,
+        )
+        self.assertIn(
+            "https://gslbmgsplive.miguvideo.com/live/quality/seg.ts",
+            rewritten_media,
+        )
+
     def test_official_http_media_host_is_allowed(self) -> None:
         self.assertTrue(
             self.relay.allowed_url("http://gslbmgsplive.miguvideo.com/live/index.m3u8")
