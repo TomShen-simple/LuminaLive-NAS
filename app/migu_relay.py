@@ -14,7 +14,7 @@ import time
 from urllib import request as urllib_request
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
-from aiohttp import ClientSession, ClientTimeout, TCPConnector, web
+from aiohttp import ClientError, ClientSession, ClientTimeout, TCPConnector, web
 
 
 MIGU_API = "https://play.miguvideo.com/playurl/v1/play/playurl"
@@ -27,6 +27,10 @@ USER_AGENT = os.environ.get(
 )
 URI_ATTRIBUTE_RE = re.compile(r'URI="([^"]+)"', re.IGNORECASE)
 LOG = logging.getLogger("lumina.migu")
+
+
+class MediaStreamInterrupted(ConnectionError):
+    """Upstream failed after downstream headers were sent; do not send a 503."""
 
 
 class MiguRelay:
@@ -103,9 +107,9 @@ class MiguRelay:
             and any(host == suffix or host.endswith(f".{suffix}") for suffix in self.allowed_suffixes)
         )
 
-    def encode_asset(self, url: str) -> str:
+    def encode_asset(self, url: str, program_id: str | None = None) -> str:
         payload = json.dumps(
-            {"url": url, "exp": int(time.time()) + self.asset_ttl},
+            {"url": url, "exp": int(time.time()) + self.asset_ttl, "program": program_id},
             separators=(",", ":"),
         ).encode()
         body = base64.urlsafe_b64encode(payload).decode().rstrip("=")
@@ -142,7 +146,7 @@ class MiguRelay:
         separator = "&" if "?" in url else "?"
         return f"{url}{separator}ddCalcu={''.join(dd_calcu)}&sv=10004&ct=android"
 
-    def decode_asset(self, token: str) -> str:
+    def decode_asset_payload(self, token: str) -> dict:
         try:
             body, supplied = token.split(".", 1)
             expected = hmac.new(self.signing_secret.encode(), body.encode(), hashlib.sha256).digest()
@@ -155,9 +159,12 @@ class MiguRelay:
             url = str(payload.get("url", ""))
             if not self.allowed_url(url):
                 raise ValueError("invalid upstream")
-            return url
+            return payload
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             raise web.HTTPForbidden(text="invalid asset token") from exc
+
+    def decode_asset(self, token: str) -> str:
+        return self.decode_asset_payload(token)["url"]
 
     def rewrite_manifest(
         self,
@@ -165,6 +172,7 @@ class MiguRelay:
         base_url: str,
         *,
         direct_assets: bool = False,
+        program_id: str | None = None,
     ) -> str:
         # Keep master/variant playlists on the NAS so the short-lived official
         # URL can be refreshed there. Once a media playlist is reached, direct
@@ -182,7 +190,7 @@ class MiguRelay:
             if direct_assets and is_media_playlist:
                 return absolute
             suffix = "?direct=1" if direct_assets else ""
-            return f"/api/migu/asset/{self.encode_asset(absolute)}{suffix}"
+            return f"/api/migu/asset/{self.encode_asset(absolute, program_id)}{suffix}"
 
         output: list[str] = []
         for raw in manifest.splitlines():
@@ -351,7 +359,16 @@ class MiguRelay:
             downstream = web.StreamResponse(status=upstream.status, headers=response_headers)
             await downstream.prepare(request)
             if request.method != "HEAD":
-                async for chunk in upstream.content.iter_chunked(128 * 1024):
+                chunks = upstream.content.iter_chunked(128 * 1024).__aiter__()
+                while True:
+                    try:
+                        chunk = await chunks.__anext__()
+                    except StopAsyncIteration:
+                        break
+                    except (ClientError, OSError, TimeoutError) as exc:
+                        if request.transport is not None:
+                            request.transport.close()
+                        raise MediaStreamInterrupted("upstream media interrupted") from exc
                     await downstream.write(chunk)
             await downstream.write_eof()
             return downstream

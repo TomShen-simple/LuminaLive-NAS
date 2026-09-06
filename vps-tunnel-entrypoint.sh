@@ -31,9 +31,16 @@ else
 fi
 chmod 600 /tmp/known_hosts
 
+# Keep reconnect backoff bounded instead of autossh's default ten minutes.
+export AUTOSSH_GATETIME="${AUTOSSH_GATETIME:-0}"
+export AUTOSSH_POLL="${AUTOSSH_POLL:-30}"
+
 exec /usr/bin/autossh \
   -M 0 -N -T \
   -o ExitOnForwardFailure=yes \
+  -o BatchMode=yes \
+  -o IdentitiesOnly=yes \
+  -o ConnectTimeout=10 \
   -o ServerAliveInterval=20 \
   -o ServerAliveCountMax=3 \
   -o StrictHostKeyChecking=yes \

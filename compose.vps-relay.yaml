@@ -3,6 +3,7 @@
 services:
   lumina-live:
     image: ${IMAGE_NAME:-s1mpleboy/lumina-live-nas:latest}
+    entrypoint: ["/usr/bin/tini", "--", "python", "-m", "app.official_server"]
     restart: unless-stopped
     ports:
       - "${BIND_IP:-0.0.0.0}:${HOST_PORT:-18780}:8780"
@@ -19,6 +20,10 @@ services:
       ADMIN_TOKEN: "${ADMIN_TOKEN:-}"
       MIGU_RELAY_TOKEN: "${MIGU_RELAY_TOKEN:?请在 .env 设置 MIGU_RELAY_TOKEN}"
       MIGU_RELAY_SIGNING_SECRET: "${MIGU_RELAY_SIGNING_SECRET:?请在 .env 设置 MIGU_RELAY_SIGNING_SECRET}"
+      MIGU_MONITOR_ENABLED: "${MIGU_MONITOR_ENABLED:-true}"
+      MIGU_ACTIVE_CHECK_SECONDS: "${MIGU_ACTIVE_CHECK_SECONDS:-15}"
+      MIGU_IDLE_CHECK_SECONDS: "${MIGU_IDLE_CHECK_SECONDS:-300}"
+      MIGU_MANIFEST_TIMEOUT: "${MIGU_MANIFEST_TIMEOUT:-8}"
     volumes:
       - ${CONFIG_DIR:-./config}:/config
       - ${DATA_DIR:-./data}:/data
@@ -39,6 +44,10 @@ services:
 
   vps-tunnel:
     image: ${IMAGE_NAME:-s1mpleboy/lumina-live-nas:latest}
+    # The tunnel does not run an HTTP server. Do not inherit the image's
+    # localhost:8780 Web healthcheck; end-to-end health is measured on the VPS.
+    healthcheck:
+      disable: true
     restart: unless-stopped
     depends_on:
       lumina-live:

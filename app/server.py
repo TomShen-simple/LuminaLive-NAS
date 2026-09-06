@@ -4,6 +4,7 @@ import hmac
 import ipaddress
 import json
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from aiohttp import web
 
 from . import admin, settings
 from .migu_relay import MiguRelay
+from .official_migu import MonitoredMiguRelay
 
 
 STARTED = time.monotonic()
@@ -156,7 +158,8 @@ async def playlist(request: web.Request) -> web.Response:
 
 def create_app() -> web.Application:
     app = web.Application(client_max_size=1024 * 1024)
-    migu = MiguRelay()
+    monitored = os.environ.get("MIGU_MONITOR_ENABLED", "false").lower() in {"true", "1", "yes"}
+    migu = MonitoredMiguRelay() if monitored else MiguRelay()
     app["migu_relay"] = migu
     app.on_startup.append(migu.start)
     app.on_cleanup.append(migu.stop)
@@ -173,6 +176,8 @@ def create_app() -> web.Application:
     app.router.add_get("/status.json", status)
     app.router.add_get("/live/{filename}", playlist)
     app.router.add_get("/api/migu/status", migu.status_response)
+    if monitored:
+        app.router.add_get("/api/migu/playlist.m3u", migu.official_playlist)
     app.router.add_get("/api/migu/{program_id}/index.m3u8", migu.index)
     app.router.add_route("*", "/api/migu/asset/{token}", migu.asset)
     return app
