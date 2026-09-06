@@ -1,0 +1,22 @@
+[Unit]
+Description=Lumina official NAS-to-VPS video gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=opc
+WorkingDirectory=/opt/lumina-official
+EnvironmentFile=/etc/lumina-resolver.env
+EnvironmentFile=/etc/lumina-official-gateway.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/lumina-live/venv/bin/python /opt/lumina-official/official_gateway.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
