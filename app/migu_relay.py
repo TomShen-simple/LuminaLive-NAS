@@ -151,7 +151,7 @@ class MiguRelay:
             body, supplied = token.split(".", 1)
             expected = hmac.new(self.signing_secret.encode(), body.encode(), hashlib.sha256).digest()
             signature = base64.urlsafe_b64decode(supplied + "=" * (-len(supplied) % 4))
-            if not hmac.compare_digest(signature, expected):
+            canonical_signature = base64.urlsafe_b64encode(signature).decode().rstrip("=")`r`n            if canonical_signature != supplied:`r`n                raise ValueError("non-canonical signature")`r`n            if not hmac.compare_digest(signature, expected):
                 raise ValueError("invalid signature")
             payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
             if int(payload.get("exp", 0)) < int(time.time()):
