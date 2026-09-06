@@ -4,7 +4,7 @@ from __future__ import annotations
 import hmac
 import os
 import re
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from aiohttp import ClientError, ClientSession, ClientTimeout, web
 
@@ -35,7 +35,14 @@ def rewrite_playlist(text: str, prefix: str) -> str:
 
 
 def create_app() -> web.Application:
-    relay_base = os.environ["CCTV_MIGU_RELAY_BASE"].rstrip("/")
+    relay_base = os.environ.get("OFFICIAL_RELAY_BASE", os.environ["CCTV_MIGU_RELAY_BASE"])
+    relay_parts = urlsplit(relay_base)
+    # The legacy resolver environment points at /api/migu, while the official
+    # gateway appends that path itself. Accept both forms so a VPS upgrade does
+    # not silently produce /api/migu/api/migu/... requests.
+    if relay_parts.path.rstrip("/") == "/api/migu":
+        relay_base = urlunsplit((relay_parts.scheme, relay_parts.netloc, "", relay_parts.query, relay_parts.fragment))
+    relay_base = relay_base.rstrip("/")
     relay_token = os.environ["CCTV_MIGU_RELAY_TOKEN"]
     playback_key = os.environ["OFFICIAL_PLAYBACK_KEY"]
     public_base = os.environ["OFFICIAL_PUBLIC_BASE"].rstrip("/")
