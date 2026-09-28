@@ -28,12 +28,22 @@ class RewriteTest(unittest.TestCase):
         self.assertNotIn('live-official', result)
 
     def test_live_start_hint_preserves_segments(self):
-        source = '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:42\n#EXTINF:10,\n/api/migu/asset/abc.def\n'
+        source = ('#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:42\n'
+                  + ('#EXTINF:10,\n/api/migu/asset/abc.def\n' * 4))
         result = rewrite_playlist(source, '/prefix')
-        self.assertIn('#EXT-X-START:TIME-OFFSET=-30,PRECISE=NO', result)
+        self.assertIn('#EXT-X-START:TIME-OFFSET=-20,PRECISE=NO', result)
         self.assertIn('#EXT-X-MEDIA-SEQUENCE:42', result)
         self.assertIn('/prefix/api/migu/asset/abc.def', result)
         self.assertNotIn('#EXT-X-START:', rewrite_playlist(source + '#EXT-X-ENDLIST\n', '/prefix'))
+
+    def test_short_live_window_does_not_select_oldest_segment(self):
+        source = ('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:42\n'
+                  + ('#EXTINF:6,\n/api/migu/asset/abc.def\n' * 3))
+        self.assertIn('#EXT-X-START:TIME-OFFSET=-6,PRECISE=NO',
+                      rewrite_playlist(source, '/prefix'))
+        one_segment = source.replace('#EXTINF:6,\n/api/migu/asset/abc.def\n' * 3,
+                                     '#EXTINF:6,\n/api/migu/asset/abc.def\n')
+        self.assertNotIn('#EXT-X-START:', rewrite_playlist(one_segment, '/prefix'))
 
     def test_existing_start_hint_is_preserved(self):
         source = '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-START:TIME-OFFSET=-24\n#EXTINF:6,\n/api/migu/asset/abc.def\n'

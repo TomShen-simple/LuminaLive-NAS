@@ -146,13 +146,19 @@ def rewrite_playlist(text: str, prefix: str) -> str:
         elif line.strip():
             line = rewrite(line.strip())
         lines.append(line)
-    # Hint live players to start three target durations behind the live edge.
+    # Never point a player at the oldest segment of a short sliding window.
+    # With three six-second segments, a -18s hint selects an asset that may
+    # disappear before a slow NAS/CDN round trip finishes. For such a short
+    # window start with its newest completed segment; larger windows may keep
+    # one more segment of playback cushion.
     # Keep every segment and sequence intact for clients already playing.
     target = re.search(r"(?m)^#EXT-X-TARGETDURATION:(\d+)\s*$", text)
     if target and "#EXTINF:" in text and "#EXT-X-ENDLIST" not in text and "#EXT-X-START:" not in text:
         duration = int(target[1])
-        if duration > 0:
-            lines.insert(1, f"#EXT-X-START:TIME-OFFSET=-{3 * duration},PRECISE=NO")
+        segment_count = sum(line.startswith("#EXTINF:") for line in text.splitlines())
+        if duration > 0 and segment_count >= 2:
+            behind = min(2, max(1, segment_count - 2))
+            lines.insert(1, f"#EXT-X-START:TIME-OFFSET=-{behind * duration},PRECISE=NO")
     return "\n".join(lines) + "\n"
 
 
