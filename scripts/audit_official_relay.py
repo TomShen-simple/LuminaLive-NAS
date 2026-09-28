@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 
 BASE = os.environ.get("AUDIT_RELAY_BASE", "http://127.0.0.1:18786")
 TOKEN = os.environ["CCTV_MIGU_RELAY_TOKEN"]
+GATEWAY_BASE = os.environ.get("AUDIT_GATEWAY_BASE", "").rstrip("/")
 CHANNELS = {
     "CCTV1": "608807420", "CCTV5": "641886683", "CCTV5+": "641886773",
     "CCTV10": "624878405", "CCTV11": "667987558", "东方卫视": "651632648",
@@ -18,7 +19,10 @@ CHANNELS = {
 
 
 def manifest(url):
-    req = Request(url, headers={"Authorization": "Bearer " + TOKEN})
+    headers = {"User-Agent": "APTV"}
+    if not GATEWAY_BASE:
+        headers["Authorization"] = "Bearer " + TOKEN
+    req = Request(url, headers=headers)
     with urlopen(req, timeout=12) as response:
         data = response.read(1_000_001)
     if len(data) > 1_000_000:
@@ -34,7 +38,7 @@ def audit(item):
     started = time.monotonic()
     stage = "index"
     try:
-        root = BASE + "/api/migu/" + pid + "/index.m3u8"
+        root = (GATEWAY_BASE or BASE) + "/api/migu/" + pid + "/index.m3u8"
         url = root
         text = manifest(url)
         for _ in range(3):
@@ -56,7 +60,7 @@ def audit(item):
         for segment, duration in segments[-2:]:
             stage = "segment"
             st = time.monotonic()
-            with urlopen(segment, timeout=12) as response:
+            with urlopen(Request(segment, headers={"User-Agent": "APTV"}), timeout=12) as response:
                 data = response.read(8_000_001)
             seconds = time.monotonic() - st
             results.append({"bytes": len(data), "complete": len(data) <= 8_000_000,
@@ -65,7 +69,10 @@ def audit(item):
                             "mpegts": len(data) > 188 and data[0] == data[188] == 0x47})
         seq = re.search(r"#EXT-X-MEDIA-SEQUENCE:(\d+)", text)
         return {"channel": name, "manifestSeconds": elapsed,
-                "sequence": int(seq[1]) if seq else None, "segments": results}
+                "sequence": int(seq[1]) if seq else None,
+                "playlistWindowSeconds": round(sum(item[1] for item in segments), 2),
+                "programDateTimePresent": "#EXT-X-PROGRAM-DATE-TIME:" in text,
+                "viaGateway": bool(GATEWAY_BASE), "segments": results}
     except Exception as exc:
         detail = ""
         if hasattr(exc, "read"):

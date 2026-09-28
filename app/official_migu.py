@@ -6,7 +6,7 @@ import re
 import time
 from urllib.parse import urlencode, urljoin
 
-from aiohttp import ClientError, ClientTimeout, web
+from aiohttp import ClientError, ClientResponseError, ClientTimeout, web
 
 from .migu_relay import MediaStreamInterrupted, MiguRelay
 from .official_channels import MIGU_CHANNELS
@@ -32,6 +32,31 @@ class MonitoredMiguRelay(MiguRelay):
         self.idle_slots = asyncio.Semaphore(2)
         self.check_tasks: dict[str, asyncio.Task] = {}
         self.check_active: dict[str, bool] = {}
+        self.retry_delays = (5, 15, 30, 60)
+        self.validated_cdn_hosts: set[str] = set()
+
+    def record_failure(self, program_id: str, error: str) -> None:
+        state = self.health.setdefault(program_id, {})
+        failures = state.get("consecutiveFailures", 0) + 1
+        delay = self.retry_delays[min(failures - 1, len(self.retry_delays) - 1)]
+        state.update(ok=False, manifestOk=False, lastError=error,
+                     consecutiveFailures=failures, retryDelaySeconds=delay,
+                     nextRetryMonotonic=time.monotonic() + delay,
+                     nextRetryAt=time.time() + delay, checkedAt=time.time(),
+                     checkedMonotonic=time.monotonic())
+
+    def record_healthy(self, program_id: str) -> None:
+        self.health.setdefault(program_id, {}).update(
+            ok=True, lastError="", consecutiveFailures=0, retryDelaySeconds=0,
+            nextRetryMonotonic=0, nextRetryAt=None, checkedAt=time.time(),
+            checkedMonotonic=time.monotonic())
+
+    def check_due(self, program_id: str, active: bool, now: float) -> bool:
+        state = self.health.get(program_id, {})
+        if state.get("nextRetryMonotonic", 0):
+            return now >= state["nextRetryMonotonic"]
+        interval = self.active_interval if active else self.idle_interval
+        return now - state.get("checkedMonotonic", float("-inf")) >= interval
 
     async def start(self, app: web.Application) -> None:
         await super().start(app)
@@ -53,6 +78,7 @@ class MonitoredMiguRelay(MiguRelay):
             "provider": "migu", "fetchLocation": "nas", "mediaMode": "nas-relay",
             "activeCheckSeconds": self.active_interval,
             "idleCheckSeconds": self.idle_interval,
+            "failureRetrySeconds": list(self.retry_delays),
             "providers": {"migu": "configured" if self.enabled else "disabled",
                           "yangshipin": "not_implemented"},
             "healthyChannels": sum(bool(s.get("ok")) and time.monotonic() - s.get("checkedMonotonic", 0)
@@ -62,6 +88,31 @@ class MonitoredMiguRelay(MiguRelay):
         }
 
     async def fetch_manifest(self, url: str) -> tuple[str, str]:
+        from urllib.parse import urlsplit
+        if urlsplit(url).hostname not in self.validated_cdn_hosts:
+            return await self.fetch_manifest_compatible(url)
+        # CDN refreshes use the same IPv4/DNS/keepalive pool as media.
+        # Some GSLB responses have malformed HTTP status lines; only those
+        # need the compatibility client below, not every HLS refresh.
+        assert self.http is not None
+        try:
+            async with self.http.get(url, headers=self.upstream_headers(),
+                                     timeout=ClientTimeout(total=self.manifest_timeout)) as response:
+                if response.status != 200 or not self.allowed_url(str(response.url)):
+                    raise web.HTTPBadGateway(text="invalid manifest response")
+                data = bytearray()
+                async for chunk in response.content.iter_chunked(65536):
+                    data.extend(chunk)
+                    if len(data) > 1_000_000:
+                        raise web.HTTPBadGateway(text="manifest too large")
+                text = data.decode("utf-8-sig", errors="replace")
+                if not text.startswith("#EXTM3U"):
+                    raise web.HTTPBadGateway(text="not HLS")
+                return text, str(response.url)
+        except ClientResponseError as exc:
+            return await self.fetch_manifest_compatible(url)
+
+    async def fetch_manifest_compatible(self, url: str) -> tuple[str, str]:
         # Bound the urllib worker itself, not only its asyncio waiter.
         def fetch() -> tuple[bytes, str, int]:
             from urllib.request import Request, urlopen
@@ -76,6 +127,9 @@ class MonitoredMiguRelay(MiguRelay):
             text = data.decode("utf-8-sig", errors="replace")
             if not text.startswith("#EXTM3U"):
                 raise ValueError("not HLS")
+            from urllib.parse import urlsplit
+            if "#EXTINF:" in text:
+                self.validated_cdn_hosts.add(urlsplit(final_url).hostname)
             return text, final_url
         except (OSError, ValueError, TimeoutError) as exc:
             # Do not expose signed URLs, cookies or server response bodies.
@@ -126,6 +180,12 @@ class MonitoredMiguRelay(MiguRelay):
         async with self.locks.setdefault(program_id, asyncio.Lock()):
             cached = self.media.get(program_id)
             now = time.monotonic()
+            state = self.health.get(program_id, {})
+            if not state.get("ok", False) and now < state.get("nextRetryMonotonic", 0):
+                raise web.HTTPServiceUnavailable(text="official channel recovery cooling down",
+                    headers={"Retry-After": str(max(1, int(state["nextRetryMonotonic"] - now + 1)))})
+            # A failed channel must pass media verification before publication.
+            sample = sample or state.get("ok") is False
             if failed_generation and (not cached or cached[1] == failed_generation):
                 if now - self.last_repair.get(program_id, float("-inf")) >= 5:
                     self.resolved.pop(program_id, None)
@@ -137,7 +197,10 @@ class MonitoredMiguRelay(MiguRelay):
             started = time.monotonic()
             for attempt in range(2):
                 try:
-                    root = await self.resolve(program_id)
+                    # Refresh the validated CDN playlist directly. Repeating
+                    # API/GSLB redirects for every HLS poll can exhaust the
+                    # player's buffer even when media throughput is adequate.
+                    root = cached[1] if cached and attempt == 0 else await self.resolve(program_id)
                     text, final_url = await self.flatten(root)
                     if sample:
                         await self.check_segment(text, final_url, program_id)
@@ -146,7 +209,7 @@ class MonitoredMiguRelay(MiguRelay):
                     state.update(manifestOk=True, lastManifestAt=time.time(), lastError="",
                                  manifestMs=round((time.monotonic() - started) * 1000))
                     if sample:
-                        state.update(ok=True, checkedAt=time.time(), checkedMonotonic=time.monotonic())
+                        self.record_healthy(program_id)
                     return text, final_url
                 except (web.HTTPException, ClientError, OSError, TimeoutError) as exc:
                     now = time.monotonic()
@@ -157,9 +220,8 @@ class MonitoredMiguRelay(MiguRelay):
                         state = self.health.setdefault(program_id, {})
                         state["refreshCount"] = state.get("refreshCount", 0) + 1
                         continue
-                    self.health.setdefault(program_id, {}).update(
-                        ok=False, manifestOk=False, checkedAt=time.time(),
-                        checkedMonotonic=now, lastError=type(exc).__name__)
+                    self.resolved.pop(program_id, None)
+                    self.record_failure(program_id, type(exc).__name__)
                     raise web.HTTPServiceUnavailable(text="official channel temporarily unavailable",
                                                      headers={"Retry-After": "2"}) from exc
             raise AssertionError("unreachable")
@@ -207,7 +269,25 @@ class MonitoredMiguRelay(MiguRelay):
     async def check_channel(self, program_id: str, active: bool = False) -> None:
         async with (self.check_slots if active else self.idle_slots):
             try:
-                await self.media_manifest(program_id, sample=True)
+                cached = self.media.get(program_id)
+                if cached and self.health.get(program_id, {}).get("ok"):
+                    # Probe independently: a slow health check must not hold
+                    # the playback lock. Discard results if playback advanced.
+                    try:
+                        text, base = await self.flatten(cached[1])
+                        await self.check_segment(text, base, program_id)
+                    except (web.HTTPException, ClientError, OSError, TimeoutError):
+                        if self.media.get(program_id) is not cached:
+                            return
+                        self.media.pop(program_id, None)
+                        self.resolved.pop(program_id, None)
+                        await self.media_manifest(program_id, sample=True)
+                    else:
+                        if self.media.get(program_id) is cached:
+                            self.media[program_id] = (text, base, time.monotonic())
+                            self.record_healthy(program_id)
+                else:
+                    await self.media_manifest(program_id, sample=True)
             except web.HTTPException:
                 pass
 
@@ -222,12 +302,9 @@ class MonitoredMiguRelay(MiguRelay):
                     # Retrieve unexpected failures so they do not silently kill
                     # monitoring or print credential-bearing task tracebacks.
                     if not current.cancelled() and current.exception():
-                        self.health.setdefault(pid, {}).update(ok=False, lastError="monitor error",
-                                                              checkedMonotonic=now)
+                        self.record_failure(pid, "monitor error")
                 active = now - self.activity.get(pid, float("-inf")) < 90
-                interval = self.active_interval if active else self.idle_interval
-                last = self.health.get(pid, {}).get("checkedMonotonic", float("-inf"))
-                if now - last >= interval:
+                if self.check_due(pid, active, now):
                     # Do not queue the whole idle catalogue behind a semaphore:
                     # a channel that becomes active must have a free check lane.
                     count = sum(not task.done() and self.check_active.get(key, False) == active

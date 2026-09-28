@@ -14,6 +14,43 @@ MEDIA = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:9\n#EXTINF:10,
 
 
 class RecoveryTest(unittest.IsolatedAsyncioTestCase):
+    async def test_manifest_uses_pooled_client_and_rejects_error_pages(self):
+        response = mock.Mock(status=200, url=ROOT)
+        async def chunks(_):
+            yield MEDIA.encode()
+        response.content.iter_chunked = chunks
+        context = mock.MagicMock()
+        context.__aenter__ = mock.AsyncMock(return_value=response)
+        context.__aexit__ = mock.AsyncMock(return_value=False)
+        relay = MonitoredMiguRelay()
+        relay.validated_cdn_hosts.add('gslbmgsplive.miguvideo.com')
+        relay.http = mock.Mock()
+        relay.http.get.return_value = context
+        with mock.patch('urllib.request.urlopen') as legacy:
+            self.assertEqual((MEDIA, ROOT), await relay.fetch_manifest(ROOT))
+            legacy.assert_not_called()
+            response.status = 403
+            with self.assertRaises(web.HTTPBadGateway):
+                await relay.fetch_manifest(ROOT)
+            legacy.assert_not_called()
+
+    async def test_refresh_reuses_cdn_and_expiration_resolves_again(self):
+        relay = MonitoredMiguRelay()
+        relay.media[PID] = (MEDIA, ROOT, time.monotonic() - 3)
+        with mock.patch.object(relay, 'resolve', new=mock.AsyncMock(return_value='new')) as resolve, mock.patch.object(
+            relay, 'flatten', new=mock.AsyncMock(return_value=(MEDIA, ROOT))
+        ) as fetch:
+            await relay.media_manifest(PID)
+            resolve.assert_not_awaited()
+            fetch.assert_awaited_once_with(ROOT)
+        relay.media[PID] = (MEDIA, ROOT, time.monotonic() - 3)
+        with mock.patch.object(relay, 'resolve', new=mock.AsyncMock(return_value='new')) as resolve, mock.patch.object(
+            relay, 'flatten', new=mock.AsyncMock(side_effect=[web.HTTPBadGateway(), (MEDIA, ROOT)])
+        ) as fetch:
+            await relay.media_manifest(PID)
+            resolve.assert_awaited_once_with(PID)
+            self.assertEqual(fetch.call_args_list, [mock.call(ROOT), mock.call('new')])
+
     def setUp(self):
         with mock.patch.dict("os.environ", {"MIGU_RELAY_TOKEN": "a" * 32}):
             self.relay = MonitoredMiguRelay()
@@ -57,9 +94,44 @@ class RecoveryTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(2, fetch.await_count)
             with self.assertRaises(web.HTTPServiceUnavailable):
                 await self.relay.media_manifest(PID)
-            self.assertEqual(3, fetch.await_count)
+            self.assertEqual(2, fetch.await_count)
         self.assertFalse(self.relay.health[PID]["ok"])
         self.assertNotIn(PID, self.relay.media)
+
+    async def test_failed_channel_backoff_and_recovery_reset(self):
+        for delay in (5, 15, 30, 60, 60):
+            self.relay.record_failure(PID, "HTTPBadGateway")
+            state = self.relay.health[PID]
+            self.assertEqual(delay, state["retryDelaySeconds"])
+            self.assertFalse(self.relay.check_due(PID, False, state["nextRetryMonotonic"] - 1))
+            self.assertTrue(self.relay.check_due(PID, False, state["nextRetryMonotonic"]))
+        self.relay.record_healthy(PID)
+        self.assertEqual(0, self.relay.health[PID]["consecutiveFailures"])
+        self.assertIsNone(self.relay.health[PID]["nextRetryAt"])
+
+    async def test_background_probe_does_not_block_playback_or_overwrite_new_generation(self):
+        self.relay.media[PID] = (MEDIA, ROOT, time.monotonic())
+        self.relay.record_healthy(PID)
+        started, release = asyncio.Event(), asyncio.Event()
+        async def probe(*args):
+            started.set()
+            await release.wait()
+            raise web.HTTPBadGateway()
+        with mock.patch.object(self.relay, "flatten", new=mock.AsyncMock(return_value=(MEDIA, ROOT))), mock.patch.object(
+            self.relay, "check_segment", side_effect=probe
+        ):
+            task = asyncio.create_task(self.relay.check_channel(PID))
+            await started.wait()
+            try:
+                result = await asyncio.wait_for(self.relay.media_manifest(PID), .2)
+                self.assertEqual((MEDIA, ROOT), result)
+                newer = (MEDIA, ROOT, time.monotonic())
+                self.relay.media[PID] = newer
+            finally:
+                release.set()
+                await task
+            self.assertIs(newer, self.relay.media[PID])
+            self.assertTrue(self.relay.health[PID]["ok"])
 
     async def test_sample_failure_refreshes_even_with_fresh_manifest(self):
         self.relay.media[PID] = (MEDIA, ROOT, time.monotonic())
