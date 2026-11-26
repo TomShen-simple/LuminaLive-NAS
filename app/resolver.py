@@ -36,6 +36,7 @@ class Validated:
     elapsed_ms: int
     media_url: str
     segment_url: str
+    throughput_mbps: float = 0.0
 
 
 def utc_now() -> str:
@@ -122,16 +123,70 @@ def host_allowed(url: str) -> bool:
         return False
 
 
+def _redirect_host_allowed(original_url: str, final_url: str) -> bool:
+    if urlparse(final_url).hostname == urlparse(original_url).hostname:
+        return True
+    return host_allowed(final_url)
+
+
 def fetch(url: str, limit: int = 1_000_000, range_header: str | None = None) -> tuple[bytes, str]:
     headers = {"User-Agent": settings.USER_AGENT, "Accept": "*/*"}
     if range_header:
         headers["Range"] = range_header
     request = Request(url, headers=headers)
     with urlopen(request, timeout=settings.HTTP_TIMEOUT) as response:
+        final_url = response.geturl()
+        if not _redirect_host_allowed(url, final_url):
+            raise RuntimeError("redirect target disallowed")
         body = response.read(limit + 1)
         if len(body) > limit:
             raise RuntimeError("response too large")
-        return body, response.geturl()
+        return body, final_url
+
+
+def fetch_sample(
+    url: str,
+    sample_bytes: int = settings.PROBE_SAMPLE_BYTES,
+    range_header: str | None = None,
+) -> tuple[bytes, str, int]:
+    """Download up to ``sample_bytes`` and return ``(data, final_url, transfer_ms)``.
+
+    Servers that ignore ``Range`` and return ``200 OK`` with a full segment are
+    capped cleanly at ``sample_bytes`` instead of failing as ``response too large``.
+    """
+    headers = {"User-Agent": settings.USER_AGENT, "Accept": "*/*"}
+    if range_header:
+        headers["Range"] = range_header
+    request = Request(url, headers=headers)
+    started = time.monotonic()
+    with urlopen(request, timeout=settings.HTTP_TIMEOUT) as response:
+        final_url = response.geturl()
+        if not _redirect_host_allowed(url, final_url):
+            raise RuntimeError("redirect target disallowed")
+        chunks: list[bytes] = []
+        total = 0
+        while total < sample_bytes:
+            chunk = response.read(min(16_384, sample_bytes - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+        transfer_ms = max(1, round((time.monotonic() - started) * 1000))
+        return b"".join(chunks), final_url, transfer_ms
+
+
+def looks_like_video_payload(data: bytes) -> bool:
+    if len(data) < 564:
+        return False
+    prefix = data[:128].lstrip().lower()
+    if prefix.startswith((b"<html", b"<!doctype", b"<xml", b"{", b"[", b"#extm3u")):
+        return False
+    limit = min(188, len(data) - 376)
+    for offset in range(limit):
+        if data[offset] == 0x47 and data[offset + 188] == 0x47 and data[offset + 376] == 0x47:
+            return True
+    head = data[:4096]
+    return any(box in head for box in (b"ftyp", b"moov", b"moof", b"styp", b"sidx"))
 
 
 def decode_manifest(url: str) -> tuple[str, str]:
@@ -145,7 +200,7 @@ def decode_manifest(url: str) -> tuple[str, str]:
     return text, final_url
 
 
-def choose_variant(manifest: str, base_url: str) -> str | None:
+def rank_variants(manifest: str, base_url: str) -> list[tuple[int, str]]:
     lines = [line.strip() for line in manifest.splitlines() if line.strip()]
     choices: list[tuple[int, str]] = []
     for index, line in enumerate(lines[:-1]):
@@ -154,9 +209,39 @@ def choose_variant(manifest: str, base_url: str) -> str | None:
         match = BANDWIDTH_RE.search(line)
         choices.append((int(match.group(1)) if match else 0, urljoin(base_url, lines[index + 1])))
     if not choices:
-        return None
-    fitting = [item for item in choices if not item[0] or item[0] <= settings.MAX_BANDWIDTH]
-    return max(fitting or choices, key=lambda item: item[0])[1]
+        return []
+    fitting = sorted(
+        (item for item in choices if not item[0] or item[0] <= settings.MAX_BANDWIDTH),
+        key=lambda item: item[0],
+        reverse=True,
+    )
+    overflow = sorted(
+        (item for item in choices if item[0] > settings.MAX_BANDWIDTH),
+        key=lambda item: item[0],
+    )
+    return fitting + overflow
+
+
+def choose_variant(manifest: str, base_url: str) -> str | None:
+    ranked = rank_variants(manifest, base_url)
+    return ranked[0][1] if ranked else None
+
+
+def _probe_segment(segment_url: str) -> tuple[str, float]:
+    if not host_allowed(segment_url):
+        raise RuntimeError("segment host disallowed")
+    sample_bytes = settings.PROBE_SAMPLE_BYTES
+    segment, final_url, transfer_ms = fetch_sample(
+        segment_url,
+        sample_bytes=sample_bytes,
+        range_header=f"bytes=0-{sample_bytes - 1}",
+    )
+    if len(segment) < 16_384 or not looks_like_video_payload(segment):
+        raise RuntimeError("segment is not playable video")
+    throughput_mbps = round((len(segment) * 8.0) / (transfer_ms * 1000.0), 2)
+    if throughput_mbps < settings.MIN_STREAM_MBPS:
+        raise RuntimeError("segment throughput too low")
+    return final_url, throughput_mbps
 
 
 def validate(url: str) -> Validated | None:
@@ -164,30 +249,48 @@ def validate(url: str) -> Validated | None:
         return None
     started = time.monotonic()
     try:
+        if urlparse(url).path.lower().endswith(".ts"):
+            final_url, throughput_mbps = _probe_segment(url)
+            return Validated(
+                url=url,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                media_url=final_url,
+                segment_url=final_url,
+                throughput_mbps=throughput_mbps,
+            )
         manifest, final_url = decode_manifest(url)
-        variant = choose_variant(manifest, final_url)
-        if variant:
-            manifest, final_url = decode_manifest(variant)
-        if "#EXT-X-ENDLIST" in manifest or "#EXTINF:" not in manifest:
-            return None
-        uris = [
-            line.strip() for line in manifest.splitlines()
-            if line.strip() and not line.startswith("#")
-        ]
-        if not uris:
-            return None
-        segment_url = urljoin(final_url, uris[-1])
-        if not host_allowed(segment_url):
-            return None
-        segment, _ = fetch(segment_url, 65_536, "bytes=0-65535")
-        if not segment:
-            return None
-        return Validated(
-            url=url,
-            elapsed_ms=round((time.monotonic() - started) * 1000),
-            media_url=final_url,
-            segment_url=segment_url,
-        )
+        variants = rank_variants(manifest, final_url)
+        targets = variants[:2] if variants else [(0, final_url)]
+        for idx, (variant_bw, target_url) in enumerate(targets):
+            try:
+                if variants:
+                    sub_manifest, media_url = decode_manifest(target_url)
+                else:
+                    sub_manifest, media_url = manifest, target_url
+                if "#EXT-X-ENDLIST" in sub_manifest or "#EXTINF:" not in sub_manifest:
+                    continue
+                uris = [
+                    line.strip() for line in sub_manifest.splitlines()
+                    if line.strip() and not line.startswith("#")
+                ]
+                if not uris:
+                    continue
+                chosen_uri = uris[-2] if len(uris) >= 2 else uris[-1]
+                segment_url = urljoin(media_url, chosen_uri)
+                probed_segment_url, throughput_mbps = _probe_segment(segment_url)
+                has_fallback = idx + 1 < len(targets)
+                if has_fallback and variant_bw > 0 and throughput_mbps < (variant_bw / 1_000_000.0) * 1.1:
+                    continue
+                return Validated(
+                    url=url,
+                    elapsed_ms=round((time.monotonic() - started) * 1000),
+                    media_url=media_url,
+                    segment_url=probed_segment_url,
+                    throughput_mbps=throughput_mbps,
+                )
+            except (OSError, RuntimeError, UnicodeError, ValueError):
+                continue
+        return None
     except (OSError, RuntimeError, UnicodeError, ValueError):
         return None
 
@@ -237,27 +340,43 @@ def collect_candidates(config: dict) -> dict[str, list[Candidate]]:
             if candidate.url not in seen:
                 seen.add(candidate.url)
                 unique.append(candidate)
-        # Keep semantically identifiable URLs ahead of opaque relay numbers so
-        # a fast but mislabeled stream cannot displace the correct channel.
-        unique.sort(key=lambda item: (-channel_url_affinity(channel_id, item.url), item.source_order))
+        # Keep local.m3u candidates ahead of remote lists, and within each tier
+        # keep semantically identifiable URLs ahead of opaque relay numbers.
+        unique.sort(key=lambda item: (item.source_order >= 0, -channel_url_affinity(channel_id, item.url), item.source_order))
         result[channel_id] = unique[: settings.MAX_CANDIDATES]
     return result
 
 
+def _candidate_rank(candidate: Candidate, checked: Validated, affinity: int) -> tuple[int, int, float, int]:
+    is_local = 1 if candidate.source_order < 0 else 0
+    healthy_affinity = affinity if (
+        checked.elapsed_ms <= 2_500
+        and (checked.throughput_mbps <= 0 or checked.throughput_mbps >= settings.MIN_STREAM_MBPS)
+    ) else 0
+    capped_mbps = min(checked.throughput_mbps, 20.0)
+    return (is_local, healthy_affinity, capped_mbps, -checked.elapsed_ms)
+
+
 def resolve_channel(channel_id: str, candidates: list[Candidate]) -> tuple[str, Validated | None]:
+    ordered = sorted(candidates, key=lambda item: item.source_order >= 0)
     best: Validated | None = None
-    best_affinity = -1
-    for candidate in candidates:
+    best_rank: tuple[int, int, float, int] | None = None
+    best_is_local = False
+    for candidate in ordered:
+        if best is not None and best_is_local and candidate.source_order >= 0:
+            break
         checked = validate(candidate.url)
+        if not checked:
+            continue
         affinity = channel_url_affinity(channel_id, candidate.url)
-        if checked and (
-            best is None
-            or affinity > best_affinity
-            or (affinity == best_affinity and checked.elapsed_ms < best.elapsed_ms)
-        ):
+        rank = _candidate_rank(candidate, checked, affinity)
+        if best_rank is None or rank > best_rank:
             best = checked
-            best_affinity = affinity
-            if affinity > 0 and checked.elapsed_ms <= 800:
+            best_rank = rank
+            best_is_local = candidate.source_order < 0
+            if candidate.source_order >= 0 and affinity > 0 and checked.elapsed_ms <= 800 and (
+                checked.throughput_mbps <= 0 or checked.throughput_mbps >= 8.0
+            ):
                 break
     return channel_id, best
 
@@ -336,6 +455,7 @@ def refresh() -> dict:
             channel_id: {
                 "upstreamHost": urlparse(item.url).hostname,
                 "validationMs": item.elapsed_ms,
+                "throughputMbps": item.throughput_mbps,
             }
             for channel_id, item in sorted(selected.items())
         },
