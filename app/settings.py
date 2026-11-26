@@ -20,6 +20,8 @@ HTTP_TIMEOUT = max(3, int(os.environ.get("HTTP_TIMEOUT", "10")))
 CHANNEL_WORKERS = max(1, min(64, int(os.environ.get("CHANNEL_WORKERS", "24"))))
 MAX_CANDIDATES = max(1, min(20, int(os.environ.get("MAX_CANDIDATES_PER_CHANNEL", "8"))))
 MAX_BANDWIDTH = max(500_000, int(os.environ.get("MAX_BANDWIDTH", "10000000")))
+PROBE_SAMPLE_BYTES = max(65_536, min(2_097_152, int(os.environ.get("PROBE_SAMPLE_BYTES", "262144"))))
+MIN_STREAM_MBPS = max(0.0, float(os.environ.get("MIN_STREAM_MBPS", "2.0")))
 ALLOW_PRIVATE = os.environ.get("ALLOW_PRIVATE_UPSTREAMS", "false").lower() in {
     "1", "true", "yes", "on"
 }

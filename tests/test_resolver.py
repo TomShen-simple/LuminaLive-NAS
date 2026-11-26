@@ -51,6 +51,99 @@ class PlaylistParsingTest(unittest.TestCase):
         ):
             self.assertFalse(resolver.host_allowed("http://nas.lan/live.m3u8"))
 
+    def test_fetch_sample_truncates_full_200_segment_without_failing(self) -> None:
+        ts_payload = (b"\x47" + b"\x00" * 187) * 2000  # ~376 KB full segment ignoring Range
+
+        class FakeResponse:
+            def __init__(self, payload: bytes, url: str) -> None:
+                self._payload = payload
+                self._pos = 0
+                self._url = url
+
+            def geturl(self) -> str:
+                return self._url
+
+            def read(self, size: int = -1) -> bytes:
+                if size < 0:
+                    chunk = self._payload[self._pos:]
+                    self._pos = len(self._payload)
+                    return chunk
+                chunk = self._payload[self._pos:self._pos + size]
+                self._pos += len(chunk)
+                return chunk
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args) -> None:
+                return None
+
+        with mock.patch.object(resolver, "urlopen", return_value=FakeResponse(ts_payload, "https://cdn.test/seg.ts")):
+            data, final_url, transfer_ms = resolver.fetch_sample("https://cdn.test/seg.ts", sample_bytes=65_536)
+        self.assertEqual(65_536, len(data))
+        self.assertEqual("https://cdn.test/seg.ts", final_url)
+        self.assertGreaterEqual(transfer_ms, 1)
+        self.assertTrue(resolver.looks_like_video_payload(data))
+
+    def test_looks_like_video_payload_rejects_html_and_accepts_ts(self) -> None:
+        self.assertFalse(resolver.looks_like_video_payload(b"<html><body>403 Forbidden</body></html>" * 30))
+        self.assertTrue(resolver.looks_like_video_payload((b"\x47" + b"\x00" * 187) * 4))
+
+    def test_local_m3u_beats_slow_remote_and_prefers_higher_throughput(self) -> None:
+        local_slow = resolver.Candidate("浙江卫视", "http://local.test/slow.m3u8", -1)
+        local_fast = resolver.Candidate("浙江卫视", "http://local.test/fast.m3u8", -1)
+        remote = resolver.Candidate("CCTV-1", "http://remote.test/cctv1.m3u8", 0)
+
+        results = {
+            local_slow.url: resolver.Validated(local_slow.url, 300, local_slow.url, "s1.ts", throughput_mbps=2.4),
+            local_fast.url: resolver.Validated(local_fast.url, 450, local_fast.url, "s2.ts", throughput_mbps=16.0),
+            remote.url: resolver.Validated(remote.url, 200, remote.url, "s3.ts", throughput_mbps=12.0),
+        }
+        with mock.patch.object(resolver, "validate", side_effect=lambda u: results[u]):
+            _, selected = resolver.resolve_channel("ZHEJIANG", [remote, local_slow, local_fast])
+        self.assertIsNotNone(selected)
+        self.assertEqual(local_fast.url, selected.url)
+
+    def test_collect_candidates_keeps_local_m3u_ahead_of_remote_affinity(self) -> None:
+        config = {
+            "source_playlists": ["https://remote.test/list.m3u"],
+            "groups": [{"title": "央视", "channels": [{"id": "CCTV1", "name": "CCTV-1"}]}],
+        }
+        remote_m3u = "#EXTM3U\n#EXTINF:-1,CCTV-1\nhttps://remote.test/live/cctv1.m3u8\n"
+        local_m3u = "#EXTM3U\n#EXTINF:-1,CCTV-1\nhttps://local.test/hls/1000.m3u8\n"
+        with tempfile.TemporaryDirectory() as directory:
+            local_path = Path(directory) / "local.m3u"
+            local_path.write_text(local_m3u, encoding="utf-8")
+            with mock.patch.object(resolver.settings, "LOCAL_M3U_PATH", local_path), mock.patch.object(
+                resolver.settings, "EXTRA_M3U_URLS", ()
+            ), mock.patch.object(resolver, "host_allowed", return_value=True), mock.patch.object(
+                resolver, "fetch", return_value=(remote_m3u.encode("utf-8"), "https://remote.test/list.m3u")
+            ):
+                pool = resolver.collect_candidates(config)
+        self.assertEqual(
+            ["https://local.test/hls/1000.m3u8", "https://remote.test/live/cctv1.m3u8"],
+            [item.url for item in pool["CCTV1"]],
+        )
+
+    def test_validate_rejects_low_throughput_segment_and_supports_direct_ts(self) -> None:
+        ts_chunk = (b"\x47" + b"\x00" * 187) * 200  # 37.6 KB
+        playlist = "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nseg1.ts\n#EXTINF:4.0,\nseg2.ts\n"
+        with mock.patch.object(resolver, "host_allowed", return_value=True), mock.patch.object(
+            resolver, "fetch", return_value=(playlist.encode("utf-8"), "https://cdn.test/live/index.m3u8")
+        ), mock.patch.object(
+            resolver, "fetch_sample", return_value=(ts_chunk, "https://cdn.test/live/seg1.ts", 500)
+        ), mock.patch.object(resolver.settings, "MIN_STREAM_MBPS", 2.0):
+            # 37.6 KB in 500ms = 0.60 Mbps -> rejected
+            self.assertIsNone(resolver.validate("https://cdn.test/live/index.m3u8"))
+
+        with mock.patch.object(resolver, "host_allowed", return_value=True), mock.patch.object(
+            resolver, "fetch_sample", return_value=(ts_chunk, "https://cdn.test/live/4k.ts", 50)
+        ), mock.patch.object(resolver.settings, "MIN_STREAM_MBPS", 2.0):
+            # 37.6 KB in 50ms = 6.02 Mbps -> accepted direct .ts
+            result = resolver.validate("https://cdn.test/live/4k.ts")
+        self.assertIsNotNone(result)
+        self.assertGreaterEqual(result.throughput_mbps, 5.0)
+
 
 class RenderingTest(unittest.TestCase):
     def test_render_keeps_requested_order_and_direct_url(self) -> None:
